@@ -7,7 +7,7 @@ import {
   Patch,
   UseGuards,
   Req,
-  Get,
+  All,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BossTimelineService } from './boss-timeline.service';

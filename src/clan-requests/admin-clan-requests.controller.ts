@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, All, Param } from '@nestjs/common';
 import { AdminClanRequestsService } from './admin-clan-requests.service';
 
 @Controller('v1/admin/clan-requests')

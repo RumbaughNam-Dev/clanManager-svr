@@ -4,9 +4,8 @@ import {
   Body,
   Controller,
   ForbiddenException,
-  Get,
+  All,
   Param,
-  Post,
   Req,
   UseGuards,
 } from '@nestjs/common';

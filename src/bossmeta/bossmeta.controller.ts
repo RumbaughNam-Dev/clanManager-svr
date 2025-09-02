@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, All } from '@nestjs/common';
 import { BossMetaService } from './bossmeta.service';
 
 @Controller('v1/bossmeta')
