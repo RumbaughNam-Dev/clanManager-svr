@@ -2,7 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Post
+  Post,
   Query,
   Req,
   UseGuards,
