@@ -3,7 +3,7 @@ import {
   BadRequestException,
   Body,
   Controller,
-  All,
+  Post
   Param,
   Req,
   UploadedFile,
@@ -29,7 +29,7 @@ export class DashboardController {
    * - 응답: { ok: true, serverTime: string, bosses: [...] }
    */
   @UseGuards(JwtOptionalAuthGuard)
-  @All('bosses')
+  @Post('bosses')
   async list(@Req() req: any) {
     const clanId = req.user?.clanId ?? null;
     return this.svc.listBossesForClan(clanId); // 래핑 없이 그대로
@@ -41,7 +41,7 @@ export class DashboardController {
    * 여기 body.imageFileName 에 넣어 호출.
    */
   @UseGuards(JwtAuthGuard)
-  @All('bosses/:id/cut')
+  @Post('bosses/:id/cut')
   async cutBoss(
     @Req() req: any,
     @Param('id') bossMetaId: string,
@@ -57,12 +57,12 @@ export class DashboardController {
 
   /**
    * 이미지 업로드 (멀터)
-   * - 경로: POST /v1/dashboard/upload
+   * - 경로: Post, /v1/dashboard/upload
    * - 필드명: file
    * - 응답: { ok: true, fileName: string }
    */
   @UseGuards(JwtAuthGuard)
-  @All('upload')
+  @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({

@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, } from '@nestjs/common';
 import { ClanRequestsService } from './clan-requests.service';
 
 @Controller('v1/clan-requests')
