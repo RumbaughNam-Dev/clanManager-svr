@@ -7,12 +7,12 @@ export class AuthController {
   prisma: any;
   constructor(private readonly authService: AuthService) {}
 
-  @Post('login')
+  @Get('login')
   login(@Body() body: { loginId: string; password: string }) {
     return this.authService.login(body.loginId, body.password);
   }
 
-  @Post('refresh')
+  @Get('refresh')
   refresh(@Body() body: { refreshToken: string }) {
     return this.authService.refresh(body.refreshToken);
   }
@@ -25,12 +25,12 @@ export class AuthController {
     return this.authService.me(req.user);
   }
 
-  @Post('logout')
+  @Get('logout')
   logout() {
     return this.authService.logout();
   }
 
-  @Post('signup')
+  @Get('signup')
   async signup(
     @Body() body: { loginId: string; password: string; role?: string },
   ) {

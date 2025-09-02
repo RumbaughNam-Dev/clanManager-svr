@@ -5,7 +5,7 @@ import { ClanRequestsService } from './clan-requests.service';
 export class ClanRequestsController {
   constructor(private readonly svc: ClanRequestsService) {}
 
-  @Post()
+  @Get()
   create(@Body() body: {
     world: string;
     serverNo: number;

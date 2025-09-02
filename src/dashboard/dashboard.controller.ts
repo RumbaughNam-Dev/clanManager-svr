@@ -42,7 +42,7 @@ export class DashboardController {
    * 여기 body.imageFileName 에 넣어 호출.
    */
   @UseGuards(JwtAuthGuard)
-  @Post('bosses/:id/cut')
+  @Get('bosses/:id/cut')
   async cutBoss(
     @Req() req: any,
     @Param('id') bossMetaId: string,
@@ -63,7 +63,7 @@ export class DashboardController {
    * - 응답: { ok: true, fileName: string }
    */
   @UseGuards(JwtAuthGuard)
-  @Post('upload')
+  @Get('upload')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({

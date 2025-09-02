@@ -10,12 +10,12 @@ export class AdminClanRequestsController {
     return this.svc.listAll(); // { ok, pending, processed }
   }
 
-  @Post(':id/approve')
+  @Get(':id/approve')
   async approve(@Param('id') id: string, @Body() body: { note?: string }) {
     return this.svc.updateStatus(BigInt(id), 'APPROVED', body?.note);
   }
 
-  @Post(':id/reject')
+  @Get(':id/reject')
   async reject(@Param('id') id: string, @Body() body: { note?: string }) {
     return this.svc.updateStatus(BigInt(id), 'REJECTED', body?.note);
   }

@@ -36,7 +36,7 @@ export class TreasuryController {
    * 혈비 수동 유입 (ADMIN/LEADER/SUPERADMIN)
    * POST /v1/treasury/manual-in { amount:number, source:string }
    */
-  @Post('manual-in')
+  @Get('manual-in')
   async manualIn(
     @Req() req: any,
     @Body(new ValidationPipe({ whitelist: true, transform: true })) body: CreateManualInDto,
@@ -63,7 +63,7 @@ export class TreasuryController {
    * 혈비 수동 사용(출금) (ADMIN/LEADER/SUPERADMIN)
    * POST /v1/treasury/manual-out { amount:number, note:string }
    */
-  @Post('manual-out')
+  @Get('manual-out')
   async manualOut(
     @Req() req: any,
     @Body(new ValidationPipe({ whitelist: true, transform: true })) body: CreateManualOutDto,
