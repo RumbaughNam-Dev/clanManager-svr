@@ -30,7 +30,7 @@ export class DashboardController {
    * - 응답: { ok: true, serverTime: string, bosses: [...] }
    */
   @UseGuards(JwtOptionalAuthGuard)
-  @Get('bosses')
+  @All('bosses')
   async list(@Req() req: any) {
     const clanId = req.user?.clanId ?? null;
     return this.svc.listBossesForClan(clanId); // 래핑 없이 그대로
@@ -42,7 +42,7 @@ export class DashboardController {
    * 여기 body.imageFileName 에 넣어 호출.
    */
   @UseGuards(JwtAuthGuard)
-  @Get('bosses/:id/cut')
+  @All('bosses/:id/cut')
   async cutBoss(
     @Req() req: any,
     @Param('id') bossMetaId: string,
@@ -63,7 +63,7 @@ export class DashboardController {
    * - 응답: { ok: true, fileName: string }
    */
   @UseGuards(JwtAuthGuard)
-  @Get('upload')
+  @All('upload')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({

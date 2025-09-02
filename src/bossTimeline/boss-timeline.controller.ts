@@ -24,7 +24,7 @@ export class BossTimelineController {
    * - 로그인 사용자의 clanId 기준
    * - 최신 컷 시간순(desc)
    */
-  @Get()
+  @All()
   async list(@Req() req: any): Promise<ListTimelinesResp> {
     const clanId = req.user?.clanId ?? null;
     if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
@@ -78,7 +78,7 @@ export class BossTimelineController {
   }
 
   /** 단건 상세 */
-  @Get(':id')
+  @All(':id')
   async getOne(@Req() req: any, @Param('id') id: string) {
     const clanId = req.user?.clanId;
     return this.svc.getTimelineDetail(clanId, id);

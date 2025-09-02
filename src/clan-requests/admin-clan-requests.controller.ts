@@ -5,17 +5,17 @@ import { AdminClanRequestsService } from './admin-clan-requests.service';
 export class AdminClanRequestsController {
   constructor(private readonly svc: AdminClanRequestsService) {}
 
-  @Get()
+  @All()
   async listAll() {
     return this.svc.listAll(); // { ok, pending, processed }
   }
 
-  @Get(':id/approve')
+  @All(':id/approve')
   async approve(@Param('id') id: string, @Body() body: { note?: string }) {
     return this.svc.updateStatus(BigInt(id), 'APPROVED', body?.note);
   }
 
-  @Get(':id/reject')
+  @All(':id/reject')
   async reject(@Param('id') id: string, @Body() body: { note?: string }) {
     return this.svc.updateStatus(BigInt(id), 'REJECTED', body?.note);
   }

@@ -5,7 +5,7 @@ import { BossMetaService } from './bossmeta.service';
 export class BossMetaController {
   constructor(private readonly service: BossMetaService) {}
 
-  @Get()
+  @All()
   list() {
     return this.service.list();
   }

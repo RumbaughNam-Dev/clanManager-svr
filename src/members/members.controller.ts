@@ -74,7 +74,7 @@ export class MembersController {
   }
 
   // ✅ 조회: 로그인만 되어 있으면 가능 (USER 포함)
-  @Get()
+  @All()
   async list(@Req() req: any) {
     const { role, clanId, sub } = req.user as JwtUser;
     const resolved = await this.resolveClanId(role, clanId, req.query?.clanId, sub);
@@ -82,7 +82,7 @@ export class MembersController {
   }
 
   // 생성 (최대 49명 제한) — 관리자/간부만
-  @Get()
+  @All()
   async create(@Req() req: any, @Body() body: { loginId: string; password: string; role?: 'USER'|'LEADER' }) {
     const { role, clanId, sub } = req.user as JwtUser;
     if (role !== 'ADMIN' && role !== 'LEADER') throw new ForbiddenException('권한이 없습니다.');
@@ -91,7 +91,7 @@ export class MembersController {
   }
 
   // USER ↔ LEADER — 관리자/간부만
-  @Get(':id/role')
+  @All(':id/role')
   async changeRole(@Req() req: any, @Param('id') id: string, @Body() body: { role: 'USER'|'LEADER' }) {
     const { role, clanId, sub } = req.user as JwtUser;
     if (role !== 'ADMIN' && role !== 'LEADER') throw new ForbiddenException('권한이 없습니다.');
@@ -108,7 +108,7 @@ export class MembersController {
   }
 
   // 관리자 위임 — 관리자만
-  @Get(':id/assign-admin')
+  @All(':id/assign-admin')
   async assignAdmin(@Req() req: any, @Param('id') id: string) {
     const { role, clanId, sub } = req.user as JwtUser;
     if (role !== 'ADMIN') throw new ForbiddenException('관리자만 위임할 수 있습니다.');
@@ -122,7 +122,7 @@ export class MembersController {
   }
 
   // 삭제 — 관리자/간부만 (자기 자신 삭제 금지)
-  @Get(':id/delete')
+  @All(':id/delete')
   async remove(@Req() req: any, @Param('id') id: string) {
     const { role, clanId, sub } = req.user as JwtUser;
     if (role !== 'ADMIN' && role !== 'LEADER') throw new ForbiddenException('권한이 없습니다.');

@@ -25,7 +25,7 @@ export class TreasuryController {
    * 혈비 원장 조회(모든 혈맹원 가능)
    * GET /v1/treasury?page=1&size=20&type=IN|OUT  (type은 선택)
    */
-  @Get()
+  @All()
   async list(@Req() req: any, @Query() q: ListTreasuryQueryDto): Promise<ListTreasuryResp> {
     const clanId = req.user?.clanId;
     if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
@@ -36,7 +36,7 @@ export class TreasuryController {
    * 혈비 수동 유입 (ADMIN/LEADER/SUPERADMIN)
    * POST /v1/treasury/manual-in { amount:number, source:string }
    */
-  @Get('manual-in')
+  @All('manual-in')
   async manualIn(
     @Req() req: any,
     @Body(new ValidationPipe({ whitelist: true, transform: true })) body: CreateManualInDto,
@@ -63,7 +63,7 @@ export class TreasuryController {
    * 혈비 수동 사용(출금) (ADMIN/LEADER/SUPERADMIN)
    * POST /v1/treasury/manual-out { amount:number, note:string }
    */
-  @Get('manual-out')
+  @All('manual-out')
   async manualOut(
     @Req() req: any,
     @Body(new ValidationPipe({ whitelist: true, transform: true })) body: CreateManualOutDto,

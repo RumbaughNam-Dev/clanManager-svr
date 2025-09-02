@@ -7,30 +7,30 @@ export class AuthController {
   prisma: any;
   constructor(private readonly authService: AuthService) {}
 
-  @Get('login')
+  @All('login')
   login(@Body() body: { loginId: string; password: string }) {
     return this.authService.login(body.loginId, body.password);
   }
 
-  @Get('refresh')
+  @All('refresh')
   refresh(@Body() body: { refreshToken: string }) {
     return this.authService.refresh(body.refreshToken);
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get('me')
+  @All('me')
   me(@Req() req: any) {
     // ❌ req.user.clan 같은 것 접근 금지
     // ✅ 서비스에 payload 그대로 넘기면, 서비스가 DB에서 clan 정보를 조인해 반환합니다.
     return this.authService.me(req.user);
   }
 
-  @Get('logout')
+  @All('logout')
   logout() {
     return this.authService.logout();
   }
 
-  @Get('signup')
+  @All('signup')
   async signup(
     @Body() body: { loginId: string; password: string; role?: string },
   ) {
