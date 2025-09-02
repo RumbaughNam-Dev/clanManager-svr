@@ -1,0 +1,184 @@
+// prisma/schema.prisma
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  LEADER
+  USER
+}
+
+model ClanRequest {
+  id            BigInt @id @default(autoincrement())
+  world         String @db.VarChar(50)
+  serverNo      Int
+  clanName      String @db.VarChar(100)
+  loginId       String @db.VarChar(50)
+  passwordHash  String @db.VarChar(255)
+  depositorName String @db.VarChar(50)
+
+  status       RequestStatus @default(PENDING)
+  reviewerNote String?       @db.VarChar(255)
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([world, serverNo, clanName], name: "uq_world_server_clan")
+  @@unique([world, serverNo, loginId], name: "uq_world_server_login")
+  @@index([status, createdAt], name: "idx_status_created")
+}
+
+model Clan {
+  id       BigInt @id @default(autoincrement())
+  world    String @db.VarChar(50)
+  serverNo Int
+  name     String @db.VarChar(100)
+
+  members         User[]
+  timelines       BossTimeline[]
+  // TreasuryLedger 역방향
+  treasuryEntries TreasuryLedger[] @relation("ClanTreasuryEntries")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([world, serverNo, name], name: "uq_world_server_name")
+}
+
+model User {
+  id           BigInt   @id @default(autoincrement())
+  clanId       BigInt?
+  clan         Clan?    @relation(fields: [clanId], references: [id])
+  loginId      String   @unique @db.VarChar(50)
+  passwordHash String   @db.VarChar(255)
+  role         UserRole @default(USER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clanId], name: "idx_user_clan")
+}
+
+model BossMeta {
+  id         BigInt  @id @default(autoincrement())
+  name       String  @unique @db.VarChar(50)
+  respawn    Int // 분 단위
+  isRandom   Boolean @default(false)
+  location   String  @db.VarChar(255)
+  tpSave     String? @db.VarChar(50)
+  difficulty String? @db.VarChar(20)
+  notes      String? @db.VarChar(255)
+  orderNo    Int     @default(0)
+  active     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BossTimeline {
+  id        BigInt   @id @default(autoincrement())
+  clanId    BigInt
+  clan      Clan     @relation(fields: [clanId], references: [id])
+  bossName  String   @db.VarChar(100)
+  cutAt     DateTime @default(now())
+  imageIds  Json?
+  createdAt DateTime @default(now())
+  createdBy String   @db.VarChar(50)
+
+  lootItems       LootItem[]         @relation("TimelineLootItems")
+  distributions   LootDistribution[] @relation("TimelineDistributions")
+  // TreasuryLedger 역방향
+  treasuryEntries TreasuryLedger[]   @relation("TimelineTreasuryEntries")
+
+  @@index([clanId, cutAt], name: "idx_timeline_clan_cut")
+}
+
+model LootItem {
+  id         BigInt       @id @default(autoincrement())
+  timelineId BigInt
+  timeline   BossTimeline @relation("TimelineLootItems", fields: [timelineId], references: [id])
+
+  itemName   String    @db.VarChar(100)
+  isSold     Boolean   @default(false)
+  soldAt     DateTime?
+  soldPrice  Int?
+  toTreasury Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  createdBy String   @db.VarChar(50)
+
+  // LootDistribution 역방향(이름 맞춤)
+  distributions   LootDistribution[] @relation("ItemDistributions")
+  // TreasuryLedger 역방향
+  treasuryEntries TreasuryLedger[]   @relation("LootItemTreasuryEntries")
+
+  @@index([timelineId], name: "idx_lootitem_timeline")
+}
+
+model LootDistribution {
+  id BigInt @id @default(autoincrement())
+
+  timelineId BigInt
+  lootItemId BigInt?
+
+  timeline BossTimeline @relation("TimelineDistributions", fields: [timelineId], references: [id])
+  // LootItem와의 관계 이름 동일하게
+  lootItem LootItem?    @relation("ItemDistributions", fields: [lootItemId], references: [id])
+
+  recipientLoginId String    @db.VarChar(50)
+  amount           Int?
+  isPaid           Boolean   @default(false)
+  paidAt           DateTime?
+
+  createdAt DateTime @default(now())
+  createdBy String   @db.VarChar(50)
+
+  @@index([timelineId], name: "idx_distribution_timeline")
+  @@index([lootItemId], name: "idx_distribution_lootitem")
+}
+
+enum TreasuryEntryType {
+  SALE_TREASURY // 보스 드랍 아이템 판매금 유입
+  MANUAL_IN // 수동 입금
+  MANUAL_OUT // 수동 출금(지출)
+}
+
+model TreasuryLedger {
+  id BigInt @id @default(autoincrement())
+
+  clanId BigInt
+  clan   Clan   @relation("ClanTreasuryEntries", fields: [clanId], references: [id])
+
+  timelineId BigInt?
+  timeline   BossTimeline? @relation("TimelineTreasuryEntries", fields: [timelineId], references: [id])
+
+  lootItemId BigInt?
+  lootItem   LootItem? @relation("LootItemTreasuryEntries", fields: [lootItemId], references: [id])
+
+  entryType TreasuryEntryType
+  amount    Int
+  note      String?           @db.VarChar(255)
+
+  // 이 시점 누적 잔액(스냅샷)
+  balance Int
+
+  createdBy String   @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([clanId, createdAt], name: "idx_treasury_clan_created")
+  @@map("treasury_ledger")
+}
