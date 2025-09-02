@@ -14,7 +14,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 @Controller('v1/files')
 @UseGuards(JwtAuthGuard) // 업로드는 로그인 필요
 export class FilesController {
-  @Get('upload')
+  @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
   upload(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
