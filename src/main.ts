@@ -9,8 +9,8 @@ async function bootstrap() {
 
   app.enableCors({
     origin: true,                  // 필요시 도메인 화이트리스트로 교체
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: 'Content-Type, Authorization',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   });
 
