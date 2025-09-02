@@ -1,4 +1,4 @@
-import { Controller, All } from '@nestjs/common';
+import { Controller, Post } from '@nestjs/common';
 
 @Controller('v1/time')
 export class TimeController {
