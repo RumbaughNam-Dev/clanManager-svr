@@ -8,7 +8,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-    origin: 'https://rumbaugh.co.kr',                  // 필요시 도메인 화이트리스트로 교체
+    origin: 'http://rumbaugh.co.kr',                  // 필요시 도메인 화이트리스트로 교체
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
