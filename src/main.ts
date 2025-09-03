@@ -65,7 +65,13 @@ async function bootstrap() {
       cb(null, allowOrigins.includes(origin));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    // ⬇️ 여기에 커스텀 헤더 추가
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-From-HttpWrapper',
+      'X-Orig-Method',
+    ],
     credentials: true,
   });
 
