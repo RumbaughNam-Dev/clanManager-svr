@@ -22,16 +22,14 @@ async function bootstrap() {
   const PORT = Number(process.env.PORT ?? (HTTPS ? 443 : 3000));
   const HOST = process.env.HOST ?? '0.0.0.0';
 
-  // HTTPS 옵션 (키/인증서 경로는 .env로 주입)
   const httpsOptions = HTTPS
     ? {
-        key: readIfExists(process.env.SSL_KEY_PATH),     // 예: /home/ubuntu/tomcat8/cert/rumbaugh_co_kr_rsa.key
-        cert: readIfExists(process.env.SSL_CERT_PATH),   // 예: /home/ubuntu/tomcat8/cert/rumbaugh_co_kr.crt
-        ca: readIfExists(process.env.SSL_CA_PATH),       // 예: /home/ubuntu/tomcat8/cert/ChainCA.crt 또는 bundle.pem
+        key: readIfExists(process.env.SSL_KEY_PATH),
+        cert: readIfExists(process.env.SSL_CERT_PATH),
+        ca: readIfExists(process.env.SSL_CA_PATH),
       }
     : undefined;
 
-  // HTTPS 켜줬는데 파일을 못 읽으면 바로 알림
   if (HTTPS && (!httpsOptions?.key || !httpsOptions?.cert)) {
     console.error(
       '[BOOT] HTTPS가 활성화되어 있지만 키/인증서 파일을 읽을 수 없습니다.\n' +
@@ -42,9 +40,13 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, { httpsOptions });
 
+  // ✅ 요청 로그 출력 미들웨어
+  app.use((req, _res, next) => {
+    console.log(`[REQ] ${req.method} ${req.url} x-orig=${req.headers['x-orig-method']}`);
+    next();
+  });
+
   // CORS
-  // - origin은 "스킴+호스트(+포트)"까지만 의미가 있습니다. (경로 붙여도 무시)
-  // - 필요시 FRONT_ORIGINS="https://rumbaugh.co.kr,http://localhost:5173" 처럼 콤마구분으로 덮어쓰기 가능
   const defaultOrigins = [
     'https://rumbaugh.co.kr',
     'http://rumbaugh.co.kr',
@@ -59,7 +61,6 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, cb) => {
-      // 서버-서버(서버사이드) 호출은 origin이 undefined일 수 있음 → 허용
       if (!origin) return cb(null, true);
       cb(null, allowOrigins.includes(origin));
     },
