@@ -119,7 +119,7 @@ model LootItem {
   toTreasury  Boolean  @default(false)
 
   /// ✅ 추가: 루팅자 아이디 (NOT NULL)
-  lootUserId  String   @default("") @db.VarChar(100)
+  lootUserId  String?   @default("") @db.VarChar(100)
 
   createdAt   DateTime @default(now())
   createdBy   String   @db.VarChar(50)

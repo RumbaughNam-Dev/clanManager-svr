@@ -45,14 +45,54 @@ export class DashboardController {
   async cutBoss(
     @Req() req: any,
     @Param('id') bossMetaId: string,
-    @Body() body: { cutAtIso: string; looterLoginId?: string|null; items?: string[]; mode:'DISTRIBUTE'|'TREASURY'; participants?: string[]; imageFileName?: string }
+    @Body()
+    body: {
+      cutAtIso?: string;                       // 프론트에서 안 보내면 서버시간으로 대체
+      looterLoginId?: string | null;           // 레거시 공통 루팅자(옵션)
+      items?: string[];                        // 레거시: 아이템 이름 배열
+      lootUsers?: Array<string | null>;        // 레거시: 인덱스 매칭 루팅자 배열 (서비스에 굳이 안 넘겨도 됨)
+      itemsEx?: {                              // 신규: per-item (프론트는 itemName을 보냄)
+        itemName: string;
+        lootUserId?: string | null;
+      }[];
+      mode: 'DISTRIBUTE' | 'TREASURY';
+      participants?: string[];
+      imageFileName?: string;
+    }
   ) {
     const clanId = req.user?.clanId;
     const actorLoginId = req.user?.loginId ?? 'system';
     if (!clanId) {
       throw new BadRequestException('혈맹 정보가 없습니다.');
     }
-    return this.svc.cutBoss(clanId, bossMetaId, body, actorLoginId);
+
+    // 1) cutAtIso: 서비스는 string 필수 → 기본값으로 서버 시간 보정
+    const cutAtIso = body.cutAtIso ?? new Date().toISOString();
+
+    // 2) itemsEx: 서비스는 name 필드 기대 → itemName → name 으로 매핑
+    const itemsEx =
+      Array.isArray(body.itemsEx)
+        ? body.itemsEx
+            .map(r => ({
+              name: (r?.itemName ?? '').trim(),             // ← 필드명 변환
+              lootUserId: (r?.lootUserId ?? null) || null,  // 그대로 통과(문자열 또는 null)
+            }))
+            .filter(r => !!r.name)
+        : undefined;
+
+    // 3) 서비스 시그니처에 맞는 페이로드 구성 (lootUsers는 넘기지 않아도 서비스 쪽 로직에 지장 없음)
+    const payloadForSvc = {
+      cutAtIso,                                 // ✅ 필수 문자열
+      looterLoginId: body.looterLoginId ?? null,
+      items: body.items,                        // (레거시) 있으면 전달
+      itemsEx,                                  // (신규) 정규화된 배열
+      mode: body.mode,
+      participants: body.participants,
+      imageFileName: body.imageFileName,
+      actorLoginId,                             // 누가 기록했는지
+    };
+
+    return this.svc.cutBoss(String(clanId), bossMetaId, payloadForSvc, actorLoginId);
   }
 
   /**

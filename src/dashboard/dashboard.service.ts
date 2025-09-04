@@ -143,8 +143,14 @@ export class DashboardService {
     bossMetaId: string,
     body: {
       cutAtIso: string;
-      looterLoginId?: string | null; // ✅ 각 아이템에 공통 저장
+      // 레거시 공통(있을 수도/없을 수도)
+      looterLoginId?: string | null;
+      // 레거시: 아이템 이름 배열
       items?: string[];
+
+      // 확장: 아이템+루팅자 1:1
+      itemsEx?: Array<{ name: string; lootUserId?: string | null }>;
+
       mode: 'DISTRIBUTE' | 'TREASURY';
       participants?: string[];
       imageFileName?: string;
@@ -153,30 +159,55 @@ export class DashboardService {
     actorLoginIdFromArg?: string,
   ) {
     if (!clanIdRaw) throw new BadRequestException('혈맹 정보가 필요합니다.');
-    const clanId = this.toBigInt(clanIdRaw);
+    const clanId = BigInt(clanIdRaw);
 
     const meta = await this.prisma.bossMeta.findUnique({
-      where: { id: this.toBigInt(bossMetaId) },
+      where: { id: BigInt(bossMetaId) },
       select: { name: true },
     });
     if (!meta) throw new BadRequestException('보스 메타를 찾을 수 없습니다.');
 
     const cutAt = new Date(body.cutAtIso);
-    if (isNaN(cutAt.getTime())) throw new BadRequestException('cutAtIso 형식이 올바르지 않습니다.');
+    if (isNaN(cutAt.getTime())) {
+      throw new BadRequestException('cutAtIso 형식이 올바르지 않습니다.');
+    }
 
-    const items = (body.items ?? []).map(s => s.trim()).filter(Boolean);
+    const actor = body.actorLoginId ?? actorLoginIdFromArg ?? 'system';
+
+    // 참여자 정리
     const participants = (body.participants ?? []).map(s => s.trim()).filter(Boolean);
 
-    // ✅ looter는 “문자열 그대로” 저장(회원 여부와 무관)
-    //    NOT NULL 컬럼이므로, 비었으면 actorLoginId를 대체값으로 사용
-    const actor = body.actorLoginId ?? actorLoginIdFromArg ?? 'system';
-    const looter: string = (body.looterLoginId ?? '').trim() || actor;
+    // 입력 소스 정규화: itemsEx 우선, 없으면 (items + lootUsers/looterLoginId) 조합
+    type SourceRow = { itemName: string; lootUserIdRaw?: string | null };
+    let source: SourceRow[] = [];
 
-    if (items.length > 0 && body.mode === 'DISTRIBUTE' && participants.length === 0) {
+    if (Array.isArray(body.itemsEx) && body.itemsEx.length > 0) {
+      source = body.itemsEx
+        .map(r => ({
+          itemName: (r?.name ?? '').trim(),
+          lootUserIdRaw: (r?.lootUserId ?? '').trim() || null,
+        }))
+        .filter(r => !!r.itemName);
+    } else {
+      const items = (body.items ?? []).map(s => s.trim()).filter(Boolean);
+      // (선택) 클라이언트에서 보낸 parallel 배열이 있다면 쓰고, 없으면 null로
+      const lootUsers: (string | null)[] =
+        (body as any).lootUsers && Array.isArray((body as any).lootUsers)
+          ? (body as any).lootUsers.map((s: any) => (typeof s === 'string' ? s.trim() : '') || null)
+          : [];
+
+      source = items.map((name, idx) => ({
+        itemName: name,
+        lootUserIdRaw: lootUsers[idx] ?? (body.looterLoginId ?? null),
+      }));
+    }
+
+    if (source.length > 0 && body.mode === 'DISTRIBUTE' && participants.length === 0) {
       throw new BadRequestException('분배 모드에서는 참여자를 1명 이상 입력해야 합니다.');
     }
 
-    const created = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // 트랜잭션
+    const created = await this.prisma.$transaction(async (tx) => {
       // 1) 타임라인
       const timeline = await tx.bossTimeline.create({
         data: {
@@ -189,43 +220,49 @@ export class DashboardService {
         select: { id: true },
       });
 
-      // 2) 아이템 생성(각각 lootUserId 저장)
-      let createdItems: { id: bigint; itemName: string }[] = [];
-      if (items.length > 0) {
-        createdItems = [];
-        for (const itemName of items) {
-          const it = await tx.lootItem.create({
-            data: {
-              timelineId: timeline.id,
-              itemName,
-              isSold: false,
-              soldAt: null,
-              soldPrice: null,
-              toTreasury: body.mode === 'TREASURY',
-              createdBy: actor,
-              lootUserId: looter, // ✅ 추가 저장
-            },
-            select: { id: true, itemName: true },
-          });
-          createdItems.push(it);
-        }
+      // 2) 아이템 생성 (❗ lootUserId는 무조건 문자열로 확정해서 저장)
+      const createdItems: { id: bigint; itemName: string }[] = [];
+      for (const row of source) {
+        // 우선순위: per-item → 공통 → actor
+        const lootUserId =
+          (row.lootUserIdRaw ?? '').trim() ||
+          (body.looterLoginId ?? '').trim() ||
+          actor;
+
+        const it = await tx.lootItem.create({
+          data: {
+            timelineId: timeline.id,
+            itemName: row.itemName,
+            isSold: false,
+            soldAt: null,
+            soldPrice: null,
+            toTreasury: body.mode === 'TREASURY',
+            lootUserId,            // ✅ NOT NULL 보장
+            createdBy: actor,
+          },
+          select: { id: true, itemName: true },
+        });
+        createdItems.push(it);
       }
 
-      // 3) 분배 모드면: 아이템×(참여자∪루팅자) 분배 레코드 미리 생성
+      // 3) 분배 레코드 (분배 모드인 경우)
       if (body.mode === 'DISTRIBUTE' && createdItems.length > 0) {
-        const everyone = Array.from(new Set<string>([...participants, looter]));
-        const rows = createdItems.flatMap((it) =>
-          everyone.map((loginId) => ({
-            timelineId: timeline.id,
-            lootItemId: it.id,
-            recipientLoginId: loginId,
-            amount: null,
-            isPaid: false,
-            paidAt: null,
-            createdBy: actor,
-          })),
-        );
-        if (rows.length > 0) await tx.lootDistribution.createMany({ data: rows });
+        // 루팅자도 참여자로 포함하려면 아래처럼 per-item 루팅자를 모아서 합칠 수 있음
+        // 여기서는 ‘입력된 참여자만’ 분배 대상으로 사용
+        if (participants.length > 0) {
+          const rows = createdItems.flatMap((it) =>
+            participants.map((loginId) => ({
+              timelineId: timeline.id,
+              lootItemId: it.id,
+              recipientLoginId: loginId,
+              amount: null,
+              isPaid: false,
+              paidAt: null,
+              createdBy: actor,
+            })),
+          );
+          if (rows.length > 0) await tx.lootDistribution.createMany({ data: rows });
+        }
       }
 
       return timeline;
