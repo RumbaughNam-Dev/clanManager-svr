@@ -4,10 +4,9 @@ import {
   Body,
   Controller,
   Param,
-  Patch,
   UseGuards,
   Req,
-  Post
+  Post, // ← Patch 제거하고 Post만
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BossTimelineService } from './boss-timeline.service';
@@ -19,11 +18,7 @@ import { UpdateDistributionPaidDto } from './dto/update-distribution-paid.dto';
 export class BossTimelineController {
   constructor(private readonly svc: BossTimelineService) {}
 
-  /**
-   * 잡은 보스 타임라인 목록
-   * - 로그인 사용자의 clanId 기준
-   * - 최신 컷 시간순(desc)
-   */
+  /** 잡은 보스 타임라인 목록 */
   @Post()
   async list(@Req() req: any): Promise<ListTimelinesResp> {
     const clanId = req.user?.clanId ?? null;
@@ -31,12 +26,8 @@ export class BossTimelineController {
     return this.svc.listForClan(clanId);
   }
 
-  /**
-   * 아이템 판매 처리
-   * - 판매가 저장
-   * - 아이템이 혈비 귀속(toTreasury=true)이면 TreasuryLedger에 적립
-   */
-  @Patch(':timelineId/items/:itemId/sell')
+  /** 아이템 판매 처리 (PATCH → POST) */
+  @Post(':timelineId/items/:itemId/sell')
   async markItemSold(
     @Param('timelineId') timelineId: string,
     @Param('itemId') itemId: string,
@@ -48,16 +39,13 @@ export class BossTimelineController {
     if (!Number.isFinite(price) || price <= 0) {
       throw new BadRequestException('soldPrice(숫자, 세후 정산가)가 필요합니다.');
     }
-
     const actorLoginId = req.user?.loginId ?? 'system';
-    const clanId = req.user?.clanId; // 혈맹 검증/원장 적립에 사용
-
-    // 서비스에서 혈비 적립까지 처리
+    const clanId = req.user?.clanId;
     return this.svc.markItemSold(timelineId, itemId, price, actorLoginId, clanId);
   }
 
-  /** 분배 지급 완료/취소 즉시 반영 */
-  @Patch(':timelineId/distributions/:distId/paid')
+  /** 분배 지급 완료/취소 즉시 반영 (PATCH → POST) */
+  @Post(':timelineId/distributions/:distId/paid')
   async markDistributionPaid(
     @Req() req: any,
     @Param('timelineId') timelineId: string,
@@ -77,19 +65,15 @@ export class BossTimelineController {
     });
   }
 
-  /** 단건 상세 */
+  /** 단건 상세 (이미 POST로 잘 맞음) */
   @Post(':id')
   async getOne(@Req() req: any, @Param('id') id: string) {
     const clanId = req.user?.clanId;
     return this.svc.getTimelineDetail(clanId, id);
   }
 
-  /**
-   * 분배완료 처리 (참여자별)
-   * PATCH /v1/boss-timelines/:timelineId/items/:itemId/distributions/:recipientLoginId
-   * body: { isPaid: boolean }
-   */
-  @Patch(':timelineId/items/:itemId/distributions/:recipientLoginId')
+  /** 참여자별 분배완료 처리 (PATCH → POST) */
+  @Post(':timelineId/items/:itemId/distributions/:recipientLoginId')
   async setDistributionPaid(
     @Param('timelineId') timelineId: string,
     @Param('itemId') itemId: string,
