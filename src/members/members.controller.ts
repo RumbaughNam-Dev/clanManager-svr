@@ -32,12 +32,6 @@ export class MembersController {
     private readonly prisma: PrismaService,
   ) {}
 
-  private ensureManager(role?: Role) {
-    if (role !== 'ADMIN' && role !== 'LEADER' && role !== 'SUPERADMIN') {
-      throw new ForbiddenException('권한이 없습니다.');
-    }
-  }
-
   private toBigInt(v: any, msg = '잘못된 ID') {
     try { return BigInt(String(v)); } catch { throw new BadRequestException(msg); }
   }
@@ -72,15 +66,17 @@ export class MembersController {
     throw new ForbiddenException('권한이 없습니다.');
   }
 
-  // ✅ 조회: 로그인만 되어 있으면 가능 (USER 포함)
-  @Post()
+  // ✅ 목록 조회: 로그인만 되어 있으면 가능 (USER 포함)
+  //    ⚠️ 경로를 /list 로 분리 (프론트도 /v1/members/list 로 호출)
+  @Post('list')
   async list(@Req() req: any) {
     const { role, clanId, sub } = req.user as JwtUser;
     const resolved = await this.resolveClanId(role, clanId, req.query?.clanId, sub);
     return this.svc.list(resolved);
   }
 
-  // 생성 (최대 49명 제한) — 관리자/간부만
+  // ✅ 생성 (최대 49명 제한) — 관리자/간부만
+  //    경로는 /v1/members (그대로 유지)
   @Post()
   async create(@Req() req: any, @Body() body: { loginId: string; password: string; role?: 'USER'|'LEADER' }) {
     const { role, clanId, sub } = req.user as JwtUser;
