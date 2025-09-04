@@ -1,3 +1,4 @@
+// src/treasury/treasury.controller.ts
 import {
   BadRequestException,
   Body,
@@ -20,21 +21,18 @@ import { CreateManualOutDto } from './dto/create-manual-out.dto';
 export class TreasuryController {
   constructor(private readonly svc: TreasuryService) {}
 
-  /**
-   * 혈비 원장 조회(모든 혈맹원 가능)
-   * GET /v1/treasury?page=1&size=20&type=IN|OUT  (type은 선택)
-   */
   @Post()
-  async list(@Req() req: any, @Query() q: ListTreasuryQueryDto): Promise<ListTreasuryResp> {
+  async list(
+    @Req() req: any,
+    // 🔹 이 핸들러에서는 알 수 없는 쿼리 허용(전역 forbidNonWhitelisted 무력화)
+    @Query(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: false }))
+    q: ListTreasuryQueryDto,
+  ): Promise<ListTreasuryResp> {
     const clanId = req.user?.clanId;
     if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
     return this.svc.list(clanId, q);
   }
 
-  /**
-   * 혈비 수동 유입 (ADMIN/LEADER/SUPERADMIN)
-   * Post, /v1/treasury/manual-in { amount:number, source:string }
-   */
   @Post('manual-in')
   async manualIn(
     @Req() req: any,
@@ -51,17 +49,12 @@ export class TreasuryController {
       clanId,
       actor: req.user?.loginId ?? 'system',
       amount: body.amount,
-      // ⚠️ note 필드에 출처 저장
-      note: body.source?.trim() || undefined,
+      note: body.source?.trim() || undefined, // ✔ note에 출처 저장
     });
 
     return { ok: true, item: { id: String(created.id) } };
   }
 
-  /**
-   * 혈비 수동 사용(출금) (ADMIN/LEADER/SUPERADMIN)
-   * Post, /v1/treasury/manual-out { amount:number, note:string }
-   */
   @Post('manual-out')
   async manualOut(
     @Req() req: any,

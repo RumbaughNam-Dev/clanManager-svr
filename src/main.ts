@@ -2,10 +2,11 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, NestApplicationOptions, ValidationPipe } from '@nestjs/common';
 import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serializer.interceptor';
 import * as fs from 'fs';
 import * as path from 'path';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 function bool(v?: string) {
   return v === '1' || /^true$/i.test(v ?? '');
@@ -38,13 +39,25 @@ async function bootstrap() {
     process.exit(1);
   }
 
-  const app = await NestFactory.create(AppModule, { httpsOptions });
+  // ✅ 여기서 옵션을 합쳐서 전달
+  const appOptions: NestApplicationOptions = {
+    httpsOptions,
+    bufferLogs: true,                   // 로그 버퍼링
+    logger: ['error', 'warn', 'log'],   // 필요하면 'debug','verbose' 추가
+  };
+
+  const app = await NestFactory.create(
+    AppModule,
+    appOptions
+  );
 
   // ✅ 요청 로그 출력 미들웨어
   app.use((req, _res, next) => {
     console.log(`[REQ] ${req.method} ${req.url} x-orig=${req.headers['x-orig-method']}`);
     next();
   });
+
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // CORS
   const defaultOrigins = [
@@ -88,6 +101,7 @@ async function bootstrap() {
 
   const scheme = HTTPS ? 'https' : 'http';
   console.log(`✅ API on ${scheme}://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  Logger.log(`✅ API on ${scheme}://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`, 'Bootstrap');
   console.log(`   CORS allowed origins: ${allowOrigins.join(', ') || '(none)'}`);
 }
 bootstrap();

@@ -1,3 +1,4 @@
+// src/treasury/dto/list-treasury.dto.ts
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
@@ -19,6 +20,10 @@ export class ListTreasuryQueryDto {
   @IsOptional()
   @IsIn(['ALL', 'IN', 'OUT'])
   type?: 'ALL' | 'IN' | 'OUT';
+
+  // 🔹 추적/출처용 쿼리 파라미터가 붙어도 ValidationPipe에서 막지 않도록 허용
+  @IsOptional()
+  via?: string;
 }
 
 export type ListTreasuryResp = {
