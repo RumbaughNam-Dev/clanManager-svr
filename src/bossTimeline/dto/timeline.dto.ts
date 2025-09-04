@@ -1,4 +1,4 @@
-// 응답 DTO들 (프론트와 합의된 필드명 유지)
+// 응답 DTO들 (프론트 합의 필드명 유지)
 
 export type LootItemDto = {
   id: string;
@@ -6,8 +6,9 @@ export type LootItemDto = {
   isSold: boolean;
   soldAt: string | null;
   soldPrice: number | null;
-  toTreasury?: boolean;   // DB 필드명(toTreasury) 그대로
-  isTreasury?: boolean;   // 프론트 호환(둘 다 내려줌)
+  toTreasury?: boolean;   // DB 필드명 그대로
+  isTreasury?: boolean;   // 프론트 호환
+  looterLoginId: string | null; // ✅ API 필드명
 };
 
 export type DistributionDto = {
