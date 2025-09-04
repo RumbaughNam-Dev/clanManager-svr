@@ -112,18 +112,19 @@ model LootItem {
   timelineId BigInt
   timeline   BossTimeline @relation("TimelineLootItems", fields: [timelineId], references: [id])
 
-  itemName   String    @db.VarChar(100)
-  isSold     Boolean   @default(false)
-  soldAt     DateTime?
-  soldPrice  Int?
-  toTreasury Boolean   @default(false)
+  itemName    String   @db.VarChar(100)
+  isSold      Boolean  @default(false)
+  soldAt      DateTime?
+  soldPrice   Int?
+  toTreasury  Boolean  @default(false)
 
-  createdAt DateTime @default(now())
-  createdBy String   @db.VarChar(50)
+  /// ✅ 추가: 루팅자 아이디 (NOT NULL)
+  lootUserId  String   @default("") @db.VarChar(100)
 
-  // LootDistribution 역방향(이름 맞춤)
+  createdAt   DateTime @default(now())
+  createdBy   String   @db.VarChar(50)
+
   distributions   LootDistribution[] @relation("ItemDistributions")
-  // TreasuryLedger 역방향
   treasuryEntries TreasuryLedger[]   @relation("LootItemTreasuryEntries")
 
   @@index([timelineId], name: "idx_lootitem_timeline")
