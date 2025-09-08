@@ -49,8 +49,7 @@ model Clan {
   name     String @db.VarChar(100)
 
   members         User[]
-  timelines       BossTimeline[]
-  // TreasuryLedger 역방향
+  timelines       BossTimeline[] // ← 반대편: BossTimeline.clan
   treasuryEntries TreasuryLedger[] @relation("ClanTreasuryEntries")
 
   createdAt DateTime @default(now())
@@ -74,57 +73,74 @@ model User {
 }
 
 model BossMeta {
-  id         BigInt  @id @default(autoincrement())
-  name       String  @unique @db.VarChar(50)
-  respawn    Int // 분 단위
-  isRandom   Boolean @default(false)
-  location   String  @db.VarChar(255)
-  tpSave     String? @db.VarChar(50)
-  difficulty String? @db.VarChar(20)
-  notes      String? @db.VarChar(255)
-  orderNo    Int     @default(0)
-  active     Boolean @default(true)
+  id         BigInt   @id @default(autoincrement())
+  name       String   @unique @db.VarChar(50)
+  respawn    Int
+  isRandom   Boolean  @default(false)
+  location   String   @db.VarChar(255)
+  tpSave     String?  @db.VarChar(50)
+  difficulty String?  @db.VarChar(20)
+  notes      String?  @db.VarChar(255)
+  orderNo    Int      @default(0)
+  active     Boolean  @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isFixBoss  String   @default("N") @db.VarChar(1)
+
+  /// 0~1439 (자정=0, 23:59=1439) — "시간만" 저장
+  genTime    Int?     @db.SmallInt @map("gen_time_min")
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([isFixBoss], map: "idx_bossmeta_isfixboss")
 }
 
 model BossTimeline {
-  id           BigInt   @id @default(autoincrement()) // ← 기존 타입 유지
-  clanId       BigInt
-  bossName     String
-  cutAt        DateTime
-  createdBy    String
-  imageIds     String[] @default([])
-  respawn      Int?     // 분 단위
+  id BigInt @id @default(autoincrement())
 
-  // 🔵 멍(노젠) 누적 횟수
-  noGenCount   Int      @default(0)
+  // Clan ↔ BossTimeline 양방향
+  clanId BigInt
+  clan   Clan   @relation(fields: [clanId], references: [id])
 
-  lootItems      LootItem[]
-  distributions  LootDistribution[]
+  bossName  String
+  cutAt     DateTime
+  createdBy String
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  // ⛔️ String[] 불가 → ✅ Json으로 교체 (앱에서 []처럼 사용)
+  images Json?
+
+  respawn Int? // 분 단위
+
+  // 멍(노젠) 누적 횟수
+  noGenCount Int @default(0)
+
+  // 반대편과 @relation 이름 일치
+  lootItems       LootItem[]         @relation("TimelineLootItems")
+  distributions   LootDistribution[] @relation("TimelineDistributions")
+  treasuryEntries TreasuryLedger[]   @relation("TimelineTreasuryEntries")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clanId], name: "idx_timeline_clan")
 }
-
 
 model LootItem {
   id         BigInt       @id @default(autoincrement())
   timelineId BigInt
   timeline   BossTimeline @relation("TimelineLootItems", fields: [timelineId], references: [id])
 
-  itemName    String   @db.VarChar(100)
-  isSold      Boolean  @default(false)
-  soldAt      DateTime?
-  soldPrice   Int?
-  toTreasury  Boolean  @default(false)
+  itemName   String    @db.VarChar(100)
+  isSold     Boolean   @default(false)
+  soldAt     DateTime?
+  soldPrice  Int?
+  toTreasury Boolean   @default(false)
 
-  /// ✅ 추가: 루팅자 아이디 (NOT NULL)
-  lootUserId  String?   @default("") @db.VarChar(100)
+  /// 루팅자 아이디
+  lootUserId String? @default("") @db.VarChar(100)
 
-  createdAt   DateTime @default(now())
-  createdBy   String   @db.VarChar(50)
+  createdAt DateTime @default(now())
+  createdBy String   @db.VarChar(50)
 
   distributions   LootDistribution[] @relation("ItemDistributions")
   treasuryEntries TreasuryLedger[]   @relation("LootItemTreasuryEntries")
@@ -139,7 +155,6 @@ model LootDistribution {
   lootItemId BigInt?
 
   timeline BossTimeline @relation("TimelineDistributions", fields: [timelineId], references: [id])
-  // LootItem와의 관계 이름 동일하게
   lootItem LootItem?    @relation("ItemDistributions", fields: [lootItemId], references: [id])
 
   recipientLoginId String    @db.VarChar(50)

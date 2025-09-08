@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import type { ListTimelinesResp, TimelineDto } from './dto/timeline.dto';
-import { TreasuryEntryType } from '@prisma/client';
+import { TreasuryEntryType, Prisma } from '@prisma/client';
 
 @Injectable()
 export class BossTimelineService {
@@ -33,8 +33,8 @@ export class BossTimelineService {
         bossName: true,
         cutAt: true,
         createdBy: true,
-        imageIds: true,
-        noGenCount: true, // 🔵 추가 선택
+        images: true,        // ✅ images(Json) 선택
+        noGenCount: true,
         lootItems: {
           select: {
             id: true,
@@ -59,30 +59,38 @@ export class BossTimelineService {
       },
     });
 
-    const items: TimelineDto[] = rows.map((t) => ({
-      id: String(t.id),
-      bossName: t.bossName,
-      cutAt: t.cutAt.toISOString(),
-      createdBy: t.createdBy,
-      imageIds: Array.isArray(t.imageIds) ? (t.imageIds as string[]) : [],
-      noGenCount: t.noGenCount ?? 0, // 🔵 응답에 포함
-      items: (t.lootItems ?? []).map((it) => ({
-        id: String(it.id),
-        itemName: it.itemName,
-        isSold: !!it.isSold,
-        soldAt: it.soldAt ? it.soldAt.toISOString() : null,
-        soldPrice: it.soldPrice ?? null,
-        toTreasury: !!it.toTreasury,
-        isTreasury: !!it.toTreasury,
-        looterLoginId: it.lootUserId ?? null,
-      })),
-      distributions: (t.distributions ?? []).map((d) => ({
-        lootItemId: d.lootItemId != null ? String(d.lootItemId) : null,
-        recipientLoginId: d.recipientLoginId,
-        isPaid: !!d.isPaid,
-        paidAt: d.paidAt ? d.paidAt.toISOString() : null,
-      })),
-    }));
+    const items: TimelineDto[] = rows.map((t) => {
+      // JsonValue → string[] 안전 변환
+      const raw = t.images as unknown;
+      const imageIds = Array.isArray(raw)
+        ? (raw.filter((x) => typeof x === 'string') as string[])
+        : [];
+
+      return {
+        id: String(t.id),
+        bossName: t.bossName,
+        cutAt: t.cutAt.toISOString(),
+        createdBy: t.createdBy,
+        imageIds,                         // ✅ 프런트 호환
+        noGenCount: t.noGenCount ?? 0,
+        items: (t.lootItems ?? []).map((it) => ({
+          id: String(it.id),
+          itemName: it.itemName,
+          isSold: !!it.isSold,
+          soldAt: it.soldAt ? it.soldAt.toISOString() : null,
+          soldPrice: it.soldPrice ?? null,
+          toTreasury: !!it.toTreasury,
+          isTreasury: !!it.toTreasury,
+          looterLoginId: it.lootUserId ?? null,
+        })),
+        distributions: (t.distributions ?? []).map((d) => ({
+          lootItemId: d.lootItemId != null ? String(d.lootItemId) : null,
+          recipientLoginId: d.recipientLoginId,
+          isPaid: !!d.isPaid,
+          paidAt: d.paidAt ? d.paidAt.toISOString() : null,
+        })),
+      };
+    });
 
     return { ok: true, items };
   }
@@ -230,7 +238,14 @@ export class BossTimelineService {
 
     const t = await this.prisma.bossTimeline.findFirst({
       where: { id, clanId },
-      include: {
+      // include는 관계만 가능 → 스칼라(images)와 함께 가져오려면 select 사용
+      select: {
+        id: true,
+        bossName: true,
+        cutAt: true,
+        createdBy: true,
+        noGenCount: true,
+        images: true, // ✅
         lootItems: {
           select: {
             id: true,
@@ -243,10 +258,25 @@ export class BossTimelineService {
           },
           orderBy: { id: 'asc' },
         },
-        distributions: true,
+        distributions: {
+          select: {
+            id: true,
+            timelineId: true,
+            lootItemId: true,
+            recipientLoginId: true,
+            isPaid: true,
+            paidAt: true,
+          },
+          orderBy: [{ lootItemId: 'asc' }, { recipientLoginId: 'asc' }],
+        },
       },
     });
     if (!t) throw new NotFoundException('타임라인을 찾을 수 없습니다.');
+
+    const raw = t.images as unknown;
+    const imageIds = Array.isArray(raw)
+      ? (raw.filter((x) => typeof x === 'string') as string[])
+      : [];
 
     return {
       ok: true,
@@ -255,7 +285,8 @@ export class BossTimelineService {
         bossName: t.bossName,
         cutAt: t.cutAt.toISOString(),
         createdBy: t.createdBy,
-        noGenCount: t.noGenCount ?? 0, // 🔵 응답 포함
+        imageIds,                     // ✅ 상세에도 노출(프론트 호환)
+        noGenCount: t.noGenCount ?? 0,
         items: (t.lootItems ?? []).map((it) => ({
           id: String(it.id),
           itemName: it.itemName,
@@ -321,7 +352,6 @@ export class BossTimelineService {
       where: { id: tId },
       data: {
         noGenCount: { increment: 1 },
-        // (선택) 별도 이벤트 로그가 필요하다면 여기서 생성
       },
       select: { id: true, noGenCount: true },
     });

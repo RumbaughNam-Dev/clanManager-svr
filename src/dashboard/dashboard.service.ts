@@ -1,4 +1,3 @@
-// src/dashboard/dashboard.service.ts
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import type { Prisma } from '@prisma/client';
@@ -12,6 +11,16 @@ type BossDto = {
   lastCutAt: string | null;   // ISO
   nextSpawnAt: string | null; // ISO
   overdue: boolean;
+};
+
+type FixedBossDto = {
+  id: string;
+  name: string;
+  location: string;
+  genTime: number | null;     // 0~1439 (자정=0, 23:59=1439)
+  respawn: number;
+  isRandom: boolean;
+  lastCutAt: string | null;   // 최근 컷 (잡힘 여부 판정용)
 };
 
 @Injectable()
@@ -32,15 +41,35 @@ export class DashboardService {
 
   /**
    * 보스 목록 + (선택) 혈맹별 최신컷으로 nextSpawn 계산
+   * - 좌/중(=tracked/forgotten): isFixBoss !== 'Y'만 포함
+   * - 우측(=fixed): isFixBoss === 'Y'만 따로 반환
    */
   async listBossesForClan(clanIdRaw?: any): Promise<{
     ok: true;
     serverTime: string;
     tracked: BossDto[];
     forgotten: BossDto[];
+    fixed: Array<{
+      id: string;
+      name: string;
+      location: string;
+      genTime: number | null;   // 0~1439 (HH*60+mm), null이면 표시 '—'
+      respawn: number;
+      isRandom: boolean;
+      lastCutAt: string | null; // 최근 컷(있으면 파랑 판정에 사용)
+    }>;
   }> {
+    // 고정보스 판단/젠시간을 위해 isFixBoss, genTime까지 선택
     const metas = await this.prisma.bossMeta.findMany({
-      select: { id: true, name: true, location: true, respawn: true, isRandom: true },
+      select: {
+        id: true,
+        name: true,
+        location: true,
+        respawn: true,
+        isRandom: true,
+        isFixBoss: true,  // "Y" | "N"
+        genTime: true,    // Int? (0~1439)
+      },
       orderBy: [{ orderNo: 'asc' }, { name: 'asc' }],
     });
 
@@ -60,10 +89,15 @@ export class DashboardService {
       }
     }
 
+    // 메타 분리
+    const fixedMetas = metas.filter(m => (m.isFixBoss ?? 'N') === 'Y');
+    const normalMetas = metas.filter(m => (m.isFixBoss ?? 'N') !== 'Y');
+
+    // ── 비고정: tracked / forgotten 계산 ──
     const tracked: Array<BossDto & { _sortMs: number }> = [];
     const forgotten: Array<BossDto & { _sortMs: number }> = [];
 
-    for (const m of metas) {
+    for (const m of normalMetas) {
       const respawnMinutes = this.toNumber((m as any).respawn);
       const last = latestByBoss[m.name] ?? null;
 
@@ -107,11 +141,37 @@ export class DashboardService {
     const trackedOut: BossDto[] = tracked.map(({ _sortMs, ...rest }) => rest);
     const forgottenOut: BossDto[] = forgotten.map(({ _sortMs, ...rest }) => rest);
 
+    // ── 고정: fixed 목록 생성 ──
+    const fixed = fixedMetas.map(m => {
+      const last = latestByBoss[m.name] ?? null;
+
+      // ✅ genTime을 어떤 이름으로 오더라도 안전하게 숫자로 변환
+      const rawGen =
+        (m as any).genTime ??
+        (m as any).genTimeMin ??   // 혹시 과거 이름이 남아있는 경우 대비
+        (m as any).gen_time ??     // DB 스네이크 케이스 대비
+        null;
+
+      const genTimeNum = rawGen == null ? null : Number(rawGen);
+      const safeGenTime = Number.isFinite(genTimeNum) ? genTimeNum : null;
+
+      return {
+        id: String(m.id),
+        name: m.name,
+        location: m.location,
+        genTime: safeGenTime,                       // ← 반드시 number|null
+        respawn: this.toNumber((m as any).respawn),
+        isRandom: !!m.isRandom,
+        lastCutAt: last ? last.toISOString() : null,
+      };
+    });
+
     return {
       ok: true,
       serverTime: this.formatDate(new Date()),
       tracked: trackedOut,
       forgotten: forgottenOut,
+      fixed, // 프론트 우측 섹션에서 사용
     };
   }
 
@@ -136,7 +196,7 @@ export class DashboardService {
    * - BossTimeline 1건
    * - LootItem N건 (각 아이템에 lootUserId 저장)
    * - 분배 모드면 LootDistribution 사전생성
-   * - imageFileName 은 imageIds JSON 배열에 1건으로 저장
+   * - imageFileName 은 images(JSON 배열)로 저장
    */
   async cutBoss(
     clanIdRaw: string | undefined,
@@ -213,7 +273,8 @@ export class DashboardService {
         data: {
           clanId,
           bossName: meta.name,
-          imageIds: body.imageFileName ? [body.imageFileName] : [],
+          // ✅ images(JSON 배열)로 저장
+          images: (body.imageFileName ? [body.imageFileName] : []) as Prisma.JsonArray,
           cutAt,
           createdBy: actor,
         },
@@ -247,8 +308,6 @@ export class DashboardService {
 
       // 3) 분배 레코드 (분배 모드인 경우)
       if (body.mode === 'DISTRIBUTE' && createdItems.length > 0) {
-        // 루팅자도 참여자로 포함하려면 아래처럼 per-item 루팅자를 모아서 합칠 수 있음
-        // 여기서는 ‘입력된 참여자만’ 분배 대상으로 사용
         if (participants.length > 0) {
           const rows = createdItems.flatMap((it) =>
             participants.map((loginId) => ({
