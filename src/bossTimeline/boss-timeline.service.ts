@@ -34,6 +34,7 @@ export class BossTimelineService {
         cutAt: true,
         createdBy: true,
         imageIds: true,
+        noGenCount: true, // 🔵 추가 선택
         lootItems: {
           select: {
             id: true,
@@ -42,7 +43,7 @@ export class BossTimelineService {
             soldAt: true,
             soldPrice: true,
             toTreasury: true,
-            lootUserId: true, // DB 컬럼
+            lootUserId: true,
           },
           orderBy: { id: 'asc' },
         },
@@ -64,6 +65,7 @@ export class BossTimelineService {
       cutAt: t.cutAt.toISOString(),
       createdBy: t.createdBy,
       imageIds: Array.isArray(t.imageIds) ? (t.imageIds as string[]) : [],
+      noGenCount: t.noGenCount ?? 0, // 🔵 응답에 포함
       items: (t.lootItems ?? []).map((it) => ({
         id: String(it.id),
         itemName: it.itemName,
@@ -71,8 +73,8 @@ export class BossTimelineService {
         soldAt: it.soldAt ? it.soldAt.toISOString() : null,
         soldPrice: it.soldPrice ?? null,
         toTreasury: !!it.toTreasury,
-        isTreasury: !!it.toTreasury, // 프론트 호환
-        looterLoginId: it.lootUserId ?? null, // API 필드명
+        isTreasury: !!it.toTreasury,
+        looterLoginId: it.lootUserId ?? null,
       })),
       distributions: (t.distributions ?? []).map((d) => ({
         lootItemId: d.lootItemId != null ? String(d.lootItemId) : null,
@@ -237,7 +239,7 @@ export class BossTimelineService {
             soldAt: true,
             soldPrice: true,
             toTreasury: true,
-            lootUserId: true, // DB 필드
+            lootUserId: true,
           },
           orderBy: { id: 'asc' },
         },
@@ -253,6 +255,7 @@ export class BossTimelineService {
         bossName: t.bossName,
         cutAt: t.cutAt.toISOString(),
         createdBy: t.createdBy,
+        noGenCount: t.noGenCount ?? 0, // 🔵 응답 포함
         items: (t.lootItems ?? []).map((it) => ({
           id: String(it.id),
           itemName: it.itemName,
@@ -261,7 +264,7 @@ export class BossTimelineService {
           toTreasury: !!it.toTreasury,
           soldPrice: it.soldPrice ?? null,
           soldAt: it.soldAt ? it.soldAt.toISOString() : null,
-          looterLoginId: it.lootUserId ?? null, // API 필드명
+          looterLoginId: it.lootUserId ?? null,
         })),
         distributions: (t.distributions ?? []).map((d) => ({
           id: String(d.id),
@@ -300,5 +303,41 @@ export class BossTimelineService {
     });
 
     return { ok: true, item: { id: updated.id, isPaid: updated.isPaid, paidAt: updated.paidAt } };
+  }
+
+  /** 🔵 멍(노젠) +1 */
+  async addDaze(input: {
+    timelineId: string;
+    clanId?: any;
+    actorLoginId?: string;
+    atIso?: string;
+  }) {
+    const tId = this.toBigInt(input.timelineId, '잘못된 타임라인 ID');
+
+    // 혈맹 권한 확인
+    await this.ensureTimelineInClan(tId, input.clanId);
+
+    const updated = await this.prisma.bossTimeline.update({
+      where: { id: tId },
+      data: {
+        noGenCount: { increment: 1 },
+        // (선택) 별도 이벤트 로그가 필요하다면 여기서 생성
+      },
+      select: { id: true, noGenCount: true },
+    });
+
+    return {
+      ok: true,
+      timelineId: String(updated.id),
+      noGenCount: updated.noGenCount,
+    };
+  }
+
+  /** (권장) 컷 처리 시 noGenCount 리셋용 helper */
+  async resetNoGenOnCut(timelineId: bigint) {
+    await this.prisma.bossTimeline.update({
+      where: { id: timelineId },
+      data: { noGenCount: 0 },
+    });
   }
 }

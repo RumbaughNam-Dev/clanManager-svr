@@ -1,4 +1,3 @@
-// src/bossTimeline/boss-timeline.controller.ts
 import {
   BadRequestException,
   Body,
@@ -6,7 +5,7 @@ import {
   Param,
   UseGuards,
   Req,
-  Post, // ← Patch 제거하고 Post만
+  Post,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BossTimelineService } from './boss-timeline.service';
@@ -65,7 +64,7 @@ export class BossTimelineController {
     });
   }
 
-  /** 단건 상세 (이미 POST로 잘 맞음) */
+  /** 단건 상세 */
   @Post(':id')
   async getOne(@Req() req: any, @Param('id') id: string) {
     const clanId = req.user?.clanId;
@@ -91,6 +90,23 @@ export class BossTimelineController {
       recipientLoginId,
       isPaid: dto.isPaid,
       actorLoginId,
+    });
+  }
+
+  /** 🔵 멍(노젠) +1 (POST) */
+  @Post(':timelineId/daze')
+  async addDaze(
+    @Req() req: any,
+    @Param('timelineId') timelineId: string,
+    @Body() body: { atIso?: string },
+  ) {
+    const actorLoginId: string = req.user?.loginId ?? 'system';
+    const clanId = req.user?.clanId;
+    return this.svc.addDaze({
+      timelineId,
+      clanId,
+      actorLoginId,
+      atIso: body?.atIso,
     });
   }
 }
