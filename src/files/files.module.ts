@@ -18,7 +18,7 @@ function filenameFactory(_req: any, file: Express.Multer.File, cb: (e: any, name
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads',
-        filename: filenameFactory,
+        filename: filenameFactory, 
       }),
       limits: {
         fileSize: 10 * 1024 * 1024, // 10MB
