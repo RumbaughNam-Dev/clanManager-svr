@@ -109,9 +109,31 @@ export class DashboardService {
       }
     }
 
+    const isFixed = (v: any) => {
+      if (v == null) return false;
+      if (typeof v === 'string') {
+        const s = v.trim().toUpperCase();        // ← 'Y ', '\r', '\n' 등 제거
+        return s === 'Y' || s === 'YES' || s === 'T' || s === 'TRUE' || s === '1';
+      }
+      if (typeof v === 'boolean') return v === true;
+      if (typeof v === 'number') return v === 1;
+      return false;
+    };
+
     // 메타 분리
-    const fixedMetas = metas.filter(m => (m.isFixBoss ?? 'N') === 'Y');
-    const normalMetas = metas.filter(m => (m.isFixBoss ?? 'N') !== 'Y');
+    const fixedMetas = metas.filter(m => isFixed((m as any).isFixBoss));
+    const normalMetas = metas.filter(m => !isFixed((m as any).isFixBoss));
+
+    if (process.env.NODE_ENV === 'production' && metas.length > 0 && fixedMetas.length === 0) {
+      // 샘플 5건만 찍어보자
+      const samples = metas.slice(0, 5).map(m => ({
+        id: String(m.id),
+        name: m.name,
+        isFixBoss_raw: (m as any).isFixBoss,
+        typeof_isFixBoss: typeof (m as any).isFixBoss,
+      }));
+      console.warn('[BossMeta fixed filter zero] metas=', metas.length, 'samples=', samples);
+    }
 
     // ── 비고정: tracked / forgotten 계산 ──
     const tracked: Array<BossDto & { _sortMs: number }> = [];
