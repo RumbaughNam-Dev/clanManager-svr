@@ -93,6 +93,17 @@ export class DashboardService {
       orderBy: [{ orderNo: 'asc' }, { name: 'asc' }],
     });
 
+    if (process.env.NODE_ENV === 'production') {
+  const sample = metas.slice(0, 5).map(m => ({
+    id: String(m.id),
+    name: m.name,
+    isFixBoss_raw: (m as any).isFixBoss,
+    typeof_isFixBoss: typeof (m as any).isFixBoss,
+    genTime: (m as any).genTime,
+  }));
+  console.warn('[BossMeta metas]', { total: metas.length, sample });
+}
+
     const clanId = this.toBigIntOrNull(clanIdRaw);
     const nowMs = Date.now();
 
