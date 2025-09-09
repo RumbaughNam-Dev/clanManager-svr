@@ -39,6 +39,26 @@ export class DashboardService {
     return Number.isFinite(n) ? n : 0;
   }
 
+  private normalizeImageIds(body: any): string[] {
+    const pick = (x: any): string[] | undefined => {
+      if (!x) return undefined;
+      if (Array.isArray(x)) {
+        if (x.length > 0 && typeof x[0] === 'object' && x[0]?.fileName) {
+          return x.map((it: any) => String(it.fileName));
+        }
+        return x.map((it: any) => String(it));
+      }
+      if (typeof x === 'string') return [x];
+      return undefined;
+    };
+    return (
+      pick(body.imageIds) ??
+      pick(body.imageIds) ??
+      pick(body.imageId) ??
+      pick(body.imageFileName) ?? []
+    );
+  }
+
   /**
    * 보스 목록 + (선택) 혈맹별 최신컷으로 nextSpawn 계산
    * - 좌/중(=tracked/forgotten): isFixBoss !== 'Y'만 포함
@@ -196,7 +216,7 @@ export class DashboardService {
    * - BossTimeline 1건
    * - LootItem N건 (각 아이템에 lootUserId 저장)
    * - 분배 모드면 LootDistribution 사전생성
-   * - imageFileName 은 images(JSON 배열)로 저장
+   * - imageFileName 은 imageIds(JSON 배열)로 저장
    */
   async cutBoss(
     clanIdRaw: string | undefined,
@@ -273,8 +293,8 @@ export class DashboardService {
         data: {
           clanId,
           bossName: meta.name,
-          // ✅ images(JSON 배열)로 저장
-          images: (body.imageFileName ? [body.imageFileName] : []) as Prisma.JsonArray,
+          // ✅ 여러 입력을 하나로 통합해서 저장
+          imageIds: this.normalizeImageIds(body) as Prisma.JsonArray,
           cutAt,
           createdBy: actor,
         },

@@ -87,7 +87,7 @@ model BossMeta {
   isFixBoss  String   @default("N") @db.VarChar(1)
 
   /// 0~1439 (자정=0, 23:59=1439) — "시간만" 저장
-  genTime    Int?     @db.SmallInt @map("gen_time_min")
+  genTime    Int?     @db.SmallInt @map("genTime")
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -107,7 +107,7 @@ model BossTimeline {
   createdBy String
 
   // ⛔️ String[] 불가 → ✅ Json으로 교체 (앱에서 []처럼 사용)
-  images Json?
+  imageIds Json?
 
   respawn Int? // 분 단위
 
@@ -120,7 +120,6 @@ model BossTimeline {
   treasuryEntries TreasuryLedger[]   @relation("TimelineTreasuryEntries")
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   @@index([clanId], name: "idx_timeline_clan")
 }

@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BossTimelineService } from './boss-timeline.service';
 import { ListTimelinesResp } from './dto/timeline.dto';
 import { UpdateDistributionPaidDto } from './dto/update-distribution-paid.dto';
+import { CutBossDto } from './dto/cut-boss.dto';
 
 @Controller('v1/boss-timelines')
 @UseGuards(JwtAuthGuard)

@@ -33,7 +33,7 @@ export class BossTimelineService {
         bossName: true,
         cutAt: true,
         createdBy: true,
-        images: true,        // ✅ images(Json) 선택
+        imageIds: true,        // ✅ imageIds(Json) 선택
         noGenCount: true,
         lootItems: {
           select: {
@@ -61,7 +61,7 @@ export class BossTimelineService {
 
     const items: TimelineDto[] = rows.map((t) => {
       // JsonValue → string[] 안전 변환
-      const raw = t.images as unknown;
+      const raw = t.imageIds as unknown;
       const imageIds = Array.isArray(raw)
         ? (raw.filter((x) => typeof x === 'string') as string[])
         : [];
@@ -238,14 +238,14 @@ export class BossTimelineService {
 
     const t = await this.prisma.bossTimeline.findFirst({
       where: { id, clanId },
-      // include는 관계만 가능 → 스칼라(images)와 함께 가져오려면 select 사용
+      // include는 관계만 가능 → 스칼라(imageIds)와 함께 가져오려면 select 사용
       select: {
         id: true,
         bossName: true,
         cutAt: true,
         createdBy: true,
         noGenCount: true,
-        images: true, // ✅
+        imageIds: true, // ✅
         lootItems: {
           select: {
             id: true,
@@ -273,7 +273,7 @@ export class BossTimelineService {
     });
     if (!t) throw new NotFoundException('타임라인을 찾을 수 없습니다.');
 
-    const raw = t.images as unknown;
+    const raw = t.imageIds as unknown;
     const imageIds = Array.isArray(raw)
       ? (raw.filter((x) => typeof x === 'string') as string[])
       : [];
