@@ -49,8 +49,11 @@ model Clan {
   name     String @db.VarChar(100)
 
   members         User[]
-  timelines       BossTimeline[] // ← 반대편: BossTimeline.clan
+  timelines       BossTimeline[]
   treasuryEntries TreasuryLedger[] @relation("ClanTreasuryEntries")
+
+  // ⬇️ BossCounter와의 관계 (이 이름을 BossCounter 쪽과 동일하게)
+  bossCounters BossCounter[] @relation("ClanBossCounters")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -73,24 +76,24 @@ model User {
 }
 
 model BossMeta {
-  id         BigInt   @id @default(autoincrement())
-  name       String   @unique @db.VarChar(50)
+  id         BigInt  @id @default(autoincrement())
+  name       String  @unique @db.VarChar(50)
   respawn    Int
-  isRandom   Boolean  @default(false)
-  location   String   @db.VarChar(255)
-  tpSave     String?  @db.VarChar(50)
-  difficulty String?  @db.VarChar(20)
-  notes      String?  @db.VarChar(255)
-  orderNo    Int      @default(0)
-  active     Boolean  @default(true)
+  isRandom   Boolean @default(false)
+  location   String  @db.VarChar(255)
+  tpSave     String? @db.VarChar(50)
+  difficulty String? @db.VarChar(20)
+  notes      String? @db.VarChar(255)
+  orderNo    Int     @default(0)
+  active     Boolean @default(true)
 
-  isFixBoss  String   @default("N") @db.VarChar(1)
+  isFixBoss String @default("N") @db.VarChar(1)
 
   /// 0~1439 (자정=0, 23:59=1439) — "시간만" 저장
-  genTime    Int?     @db.SmallInt @map("genTime")
+  genTime Int? @map("genTime") @db.SmallInt
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([isFixBoss], map: "idx_bossmeta_isfixboss")
 }
@@ -198,4 +201,20 @@ model TreasuryLedger {
 
   @@index([clanId, createdAt], name: "idx_treasury_clan_created")
   @@map("treasury_ledger")
+}
+
+model BossCounter {
+  id BigInt @id @default(autoincrement())
+
+  clanId BigInt
+  clan   Clan   @relation("ClanBossCounters", fields: [clanId], references: [id])
+
+  bossName  String @db.VarChar(50)
+  dazeCount Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clanId, bossName], name: "uq_bossCounterClanBoss")
+  @@index([clanId], name: "idx_bossCounterClan")
 }

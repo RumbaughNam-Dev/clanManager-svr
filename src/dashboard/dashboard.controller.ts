@@ -120,4 +120,11 @@ export class DashboardController {
     if (!file) throw new BadRequestException('파일이 없습니다.');
     return { ok: true, fileName: file.filename };
   }
+
+  @Post('/v1/dashboard/bosses/:id/daze')
+  async incDaze(@Param('id') id: string, @Req() req: any) {
+    // JWT에서 clanId 꺼내는 방식은 프로젝트 컨벤션대로
+    const clanId = req.user?.clanId;
+    return this.svc.incDazeByBossMeta(clanId, id);
+  }
 }

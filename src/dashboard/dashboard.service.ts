@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import type { Prisma } from '@prisma/client';
 
@@ -11,6 +11,7 @@ type BossDto = {
   lastCutAt: string | null;   // ISO
   nextSpawnAt: string | null; // ISO
   overdue: boolean;
+  dazeCount: number;          // ⬅️ 클랜별 멍 누계
 };
 
 type FixedBossDto = {
@@ -73,10 +74,10 @@ export class DashboardService {
       id: string;
       name: string;
       location: string;
-      genTime: number | null;   // 0~1439 (HH*60+mm), null이면 표시 '—'
+      genTime: number | null;
       respawn: number;
       isRandom: boolean;
-      lastCutAt: string | null; // 최근 컷(있으면 파랑 판정에 사용)
+      lastCutAt: string | null;
     }>;
   }> {
     // 고정보스 판단/젠시간을 위해 isFixBoss, genTime까지 선택
@@ -92,17 +93,6 @@ export class DashboardService {
       },
       orderBy: [{ orderNo: 'asc' }, { name: 'asc' }],
     });
-
-    if (process.env.NODE_ENV === 'production') {
-  const sample = metas.slice(0, 5).map(m => ({
-    id: String(m.id),
-    name: m.name,
-    isFixBoss_raw: (m as any).isFixBoss,
-    typeof_isFixBoss: typeof (m as any).isFixBoss,
-    genTime: (m as any).genTime,
-  }));
-  console.warn('[BossMeta metas]', { total: metas.length, sample });
-}
 
     const clanId = this.toBigIntOrNull(clanIdRaw);
     const nowMs = Date.now();
@@ -120,10 +110,31 @@ export class DashboardService {
       }
     }
 
+    // ⬇️ 클랜별 멍 카운터 조회
+    let dazeMap: Map<string, number> = new Map();
+    if (clanId) {
+      const rows = await this.prisma.$queryRaw<
+        { bossName: string; noGenCount: number }[]
+      >`
+        SELECT t.bossName AS bossName, t.noGenCount AS noGenCount
+        FROM BossTimeline t
+        INNER JOIN (
+          SELECT bossName, MAX(cutAt) AS lastCutAt
+          FROM BossTimeline
+          WHERE clanId = ${clanId}
+          GROUP BY bossName
+        ) j
+          ON j.bossName = t.bossName
+        AND j.lastCutAt = t.cutAt
+        WHERE t.clanId = ${clanId}
+      `;
+      dazeMap = new Map(rows.map(r => [r.bossName, r.noGenCount ?? 0]));
+    }
+
     const isFixed = (v: any) => {
       if (v == null) return false;
       if (typeof v === 'string') {
-        const s = v.trim().toUpperCase();        // ← 'Y ', '\r', '\n' 등 제거
+        const s = v.trim().toUpperCase();
         return s === 'Y' || s === 'YES' || s === 'T' || s === 'TRUE' || s === '1';
       }
       if (typeof v === 'boolean') return v === true;
@@ -135,17 +146,6 @@ export class DashboardService {
     const fixedMetas = metas.filter(m => isFixed((m as any).isFixBoss));
     const normalMetas = metas.filter(m => !isFixed((m as any).isFixBoss));
 
-    if (process.env.NODE_ENV === 'production' && metas.length > 0 && fixedMetas.length === 0) {
-      // 샘플 5건만 찍어보자
-      const samples = metas.slice(0, 5).map(m => ({
-        id: String(m.id),
-        name: m.name,
-        isFixBoss_raw: (m as any).isFixBoss,
-        typeof_isFixBoss: typeof (m as any).isFixBoss,
-      }));
-      console.warn('[BossMeta fixed filter zero] metas=', metas.length, 'samples=', samples);
-    }
-
     // ── 비고정: tracked / forgotten 계산 ──
     const tracked: Array<BossDto & { _sortMs: number }> = [];
     const forgotten: Array<BossDto & { _sortMs: number }> = [];
@@ -153,6 +153,7 @@ export class DashboardService {
     for (const m of normalMetas) {
       const respawnMinutes = this.toNumber((m as any).respawn);
       const last = latestByBoss[m.name] ?? null;
+      const dazeCount = dazeMap.get(m.name) ?? 0;
 
       if (!last) {
         forgotten.push({
@@ -164,6 +165,7 @@ export class DashboardService {
           lastCutAt: null,
           nextSpawnAt: null,
           overdue: false,
+          dazeCount,
           _sortMs: Number.MAX_SAFE_INTEGER,
         });
         continue;
@@ -181,6 +183,7 @@ export class DashboardService {
         lastCutAt: last.toISOString(),
         nextSpawnAt: new Date(nextMs).toISOString(),
         overdue: nextMs < nowMs,
+        dazeCount,
         _sortMs: nextMs,
       };
 
@@ -198,11 +201,10 @@ export class DashboardService {
     const fixed = fixedMetas.map(m => {
       const last = latestByBoss[m.name] ?? null;
 
-      // ✅ genTime을 어떤 이름으로 오더라도 안전하게 숫자로 변환
       const rawGen =
         (m as any).genTime ??
-        (m as any).genTimeMin ??   // 혹시 과거 이름이 남아있는 경우 대비
-        (m as any).gen_time ??     // DB 스네이크 케이스 대비
+        (m as any).genTimeMin ??
+        (m as any).gen_time ??
         null;
 
       const genTimeNum = rawGen == null ? null : Number(rawGen);
@@ -212,7 +214,7 @@ export class DashboardService {
         id: String(m.id),
         name: m.name,
         location: m.location,
-        genTime: safeGenTime,                       // ← 반드시 number|null
+        genTime: safeGenTime,
         respawn: this.toNumber((m as any).respawn),
         isRandom: !!m.isRandom,
         lastCutAt: last ? last.toISOString() : null,
@@ -224,7 +226,7 @@ export class DashboardService {
       serverTime: this.formatDate(new Date()),
       tracked: trackedOut,
       forgotten: forgottenOut,
-      fixed, // 프론트 우측 섹션에서 사용
+      fixed,
     };
   }
 
@@ -245,25 +247,44 @@ export class DashboardService {
   }
 
   /**
+   * 안전 업서트: 복합유니크가 없거나 Client 타입이 구버전이어도 동작
+   * - updateMany → (없으면) create → (경합 시) 최종 updateMany 재시도
+   */
+  private async incrementBossCounter(clanId: bigint, bossName: string, delta: number) {
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.bossCounter.updateMany({
+        where: { clanId, bossName },
+        data: { dazeCount: { increment: delta } },
+      });
+      if (updated.count > 0) return;
+
+      try {
+        await tx.bossCounter.create({
+          data: { clanId, bossName, dazeCount: Math.max(1, delta) },
+        });
+      } catch {
+        // 동시성으로 create 유니크 충돌 시 마지막 보정
+        await tx.bossCounter.updateMany({
+          where: { clanId, bossName },
+          data: { dazeCount: { increment: delta } },
+        });
+      }
+    });
+  }
+
+  /**
    * 보스 컷 생성
-   * - BossTimeline 1건
-   * - LootItem N건 (각 아이템에 lootUserId 저장)
-   * - 분배 모드면 LootDistribution 사전생성
-   * - imageFileName 은 imageIds(JSON 배열)로 저장
+   * - BossTimeline 1건, LootItem/Distribution 생성
+   * - 컷 성공 시 해당 보스 멍 카운터 0으로 리셋
    */
   async cutBoss(
     clanIdRaw: string | undefined,
     bossMetaId: string,
     body: {
       cutAtIso: string;
-      // 레거시 공통(있을 수도/없을 수도)
       looterLoginId?: string | null;
-      // 레거시: 아이템 이름 배열
       items?: string[];
-
-      // 확장: 아이템+루팅자 1:1
       itemsEx?: Array<{ name: string; lootUserId?: string | null }>;
-
       mode: 'DISTRIBUTE' | 'TREASURY';
       participants?: string[];
       imageFileName?: string;
@@ -286,11 +307,8 @@ export class DashboardService {
     }
 
     const actor = body.actorLoginId ?? actorLoginIdFromArg ?? 'system';
-
-    // 참여자 정리
     const participants = (body.participants ?? []).map(s => s.trim()).filter(Boolean);
 
-    // 입력 소스 정규화: itemsEx 우선, 없으면 (items + lootUsers/looterLoginId) 조합
     type SourceRow = { itemName: string; lootUserIdRaw?: string | null };
     let source: SourceRow[] = [];
 
@@ -303,12 +321,10 @@ export class DashboardService {
         .filter(r => !!r.itemName);
     } else {
       const items = (body.items ?? []).map(s => s.trim()).filter(Boolean);
-      // (선택) 클라이언트에서 보낸 parallel 배열이 있다면 쓰고, 없으면 null로
       const lootUsers: (string | null)[] =
         (body as any).lootUsers && Array.isArray((body as any).lootUsers)
           ? (body as any).lootUsers.map((s: any) => (typeof s === 'string' ? s.trim() : '') || null)
           : [];
-
       source = items.map((name, idx) => ({
         itemName: name,
         lootUserIdRaw: lootUsers[idx] ?? (body.looterLoginId ?? null),
@@ -319,14 +335,11 @@ export class DashboardService {
       throw new BadRequestException('분배 모드에서는 참여자를 1명 이상 입력해야 합니다.');
     }
 
-    // 트랜잭션
     const created = await this.prisma.$transaction(async (tx) => {
-      // 1) 타임라인
       const timeline = await tx.bossTimeline.create({
         data: {
           clanId,
           bossName: meta.name,
-          // ✅ 여러 입력을 하나로 통합해서 저장
           imageIds: this.normalizeImageIds(body) as Prisma.JsonArray,
           cutAt,
           createdBy: actor,
@@ -334,10 +347,8 @@ export class DashboardService {
         select: { id: true },
       });
 
-      // 2) 아이템 생성 (❗ lootUserId는 무조건 문자열로 확정해서 저장)
       const createdItems: { id: bigint; itemName: string }[] = [];
       for (const row of source) {
-        // 우선순위: per-item → 공통 → actor
         const lootUserId =
           (row.lootUserIdRaw ?? '').trim() ||
           (body.looterLoginId ?? '').trim() ||
@@ -351,7 +362,7 @@ export class DashboardService {
             soldAt: null,
             soldPrice: null,
             toTreasury: body.mode === 'TREASURY',
-            lootUserId,            // ✅ NOT NULL 보장
+            lootUserId,
             createdBy: actor,
           },
           select: { id: true, itemName: true },
@@ -359,27 +370,76 @@ export class DashboardService {
         createdItems.push(it);
       }
 
-      // 3) 분배 레코드 (분배 모드인 경우)
-      if (body.mode === 'DISTRIBUTE' && createdItems.length > 0) {
-        if (participants.length > 0) {
-          const rows = createdItems.flatMap((it) =>
-            participants.map((loginId) => ({
-              timelineId: timeline.id,
-              lootItemId: it.id,
-              recipientLoginId: loginId,
-              amount: null,
-              isPaid: false,
-              paidAt: null,
-              createdBy: actor,
-            })),
-          );
-          if (rows.length > 0) await tx.lootDistribution.createMany({ data: rows });
-        }
+      if (body.mode === 'DISTRIBUTE' && createdItems.length > 0 && participants.length > 0) {
+        const rows = createdItems.flatMap((it) =>
+          participants.map((loginId) => ({
+            timelineId: timeline.id,
+            lootItemId: it.id,
+            recipientLoginId: loginId,
+            amount: null,
+            isPaid: false,
+            paidAt: null,
+            createdBy: actor,
+          })),
+        );
+        if (rows.length > 0) await tx.lootDistribution.createMany({ data: rows });
       }
 
       return timeline;
     });
 
+    // 컷 시 멍 카운터 0으로 리셋
+    await this.resetBossCounter(clanId, meta.name);
+
     return { ok: true, id: String(created.id) };
+  }
+
+  private async resetBossCounter(clanId: bigint, bossName: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.bossCounter.updateMany({
+        where: { clanId, bossName },
+        data: { dazeCount: 0 },
+      });
+      if (updated.count === 0) {
+        try {
+          await tx.bossCounter.create({ data: { clanId, bossName, dazeCount: 0 } });
+        } catch {
+          await tx.bossCounter.updateMany({ where: { clanId, bossName }, data: { dazeCount: 0 } });
+        }
+      }
+    });
+  }  
+  
+  /** 멍 +1 (보스 메타 ID 기준, 클랜별) */
+  async incDazeByBossMeta(clanIdRaw: any, bossMetaIdRaw: string) {
+    const clanId = this.toBigInt(clanIdRaw, '혈맹 정보가 필요합니다.');
+    const bossMetaId = this.toBigInt(bossMetaIdRaw, '보스 ID가 올바르지 않습니다.');
+
+    const meta = await this.prisma.bossMeta.findUnique({
+      where: { id: bossMetaId },
+      select: { name: true },
+    });
+    if (!meta) throw new NotFoundException('보스 메타를 찾을 수 없습니다.');
+
+    // 원자적 UPSERT (+1)
+    const changed = await this.upsertBossCounterRaw(clanId, meta.name, 1);
+    console.log('[incDazeByBossMeta] +1', { clanId: String(clanId), bossName: meta.name, changed });
+
+    const row = await this.prisma.bossCounter.findFirst({
+      where: { clanId, bossName: meta.name },
+      select: { dazeCount: true },
+    });
+    return { ok: true, dazeCount: row?.dazeCount ?? 0 };
+  }
+
+  /** BossCounter 원자적 UPSERT (INSERT ... ON DUPLICATE KEY UPDATE) */
+  private async upsertBossCounterRaw(clanId: bigint, bossName: string, delta: number) {
+    // ⚠️ 전제: @@unique([clanId, bossName]) 존재
+    const res: number = await this.prisma.$executeRaw`
+      INSERT INTO \`BossCounter\` (\`clanId\`, \`bossName\`, \`dazeCount\`)
+      VALUES (${clanId}, ${bossName}, ${Math.max(1, delta)})
+      ON DUPLICATE KEY UPDATE \`dazeCount\` = \`dazeCount\` + ${delta}
+    `;
+    return res; // 영향받은 행 수
   }
 }
