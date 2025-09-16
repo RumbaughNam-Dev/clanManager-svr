@@ -1,3 +1,4 @@
+// src/dashboard/dashboard.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import type { Prisma } from '@prisma/client';
@@ -27,6 +28,9 @@ type FixedBossDto = {
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
+
+  // 유예 5분 (서버에서도 동일하게 사용)
+  private readonly OVERDUE_GRACE_MS = 5 * 60 * 1000;
 
   private toBigIntOrNull(v: any) {
     if (v == null) return null;
@@ -62,8 +66,8 @@ export class DashboardService {
 
   /**
    * 보스 목록 + (선택) 혈맹별 최신컷으로 nextSpawn 계산
-   * - 좌/중(=tracked/forgotten): isFixBoss !== 'Y'만 포함
-   * - 우측(=fixed): isFixBoss === 'Y'만 따로 반환
+   * - 좌/중(=tracked/forgotten): isFixBoss !== 'Y'만 포함 (랜덤 보스)
+   * - 우측(=fixed): isFixBoss === 'Y'만 따로 반환 (고정 보스)
    */
   async listBossesForClan(clanIdRaw?: any): Promise<{
     ok: true;
@@ -87,7 +91,7 @@ export class DashboardService {
         name: true,
         location: true,
         respawn: true,
-        isRandom: true,
+        isRandom: true,   // ⚠️ DB 필드가 있더라도 신뢰하지 않고 아래에서 파생 isRandom 파생값으로 대체
         isFixBoss: true,  // "Y" | "N"
         genTime: true,    // Int? (0~1439)
       },
@@ -110,7 +114,7 @@ export class DashboardService {
       }
     }
 
-    // ⬇️ 클랜별 멍 카운터 조회
+    // ⬇️ 클랜별 멍 카운터 조회(최근 타임라인의 noGenCount)
     let dazeMap: Map<string, number> = new Map();
     if (clanId) {
       const rows = await this.prisma.$queryRaw<
@@ -142,11 +146,11 @@ export class DashboardService {
       return false;
     };
 
-    // 메타 분리
+    // 메타 분리 (고정/랜덤)
     const fixedMetas = metas.filter(m => isFixed((m as any).isFixBoss));
     const normalMetas = metas.filter(m => !isFixed((m as any).isFixBoss));
 
-    // ── 비고정: tracked / forgotten 계산 ──
+    // ── 비고정(랜덤): tracked / forgotten 계산 ──
     const tracked: Array<BossDto & { _sortMs: number }> = [];
     const forgotten: Array<BossDto & { _sortMs: number }> = [];
 
@@ -155,13 +159,16 @@ export class DashboardService {
       const last = latestByBoss[m.name] ?? null;
       const dazeCount = dazeMap.get(m.name) ?? 0;
 
+      // ⚠️ 파생 isRandom: isFixBoss가 N이면 랜덤 취급
+      const derivedIsRandom = true;
+
       if (!last) {
         forgotten.push({
           id: String(m.id),
           name: m.name,
           location: m.location,
           respawn: respawnMinutes,
-          isRandom: !!m.isRandom,
+          isRandom: derivedIsRandom,
           lastCutAt: null,
           nextSpawnAt: null,
           overdue: false,
@@ -179,15 +186,17 @@ export class DashboardService {
         name: m.name,
         location: m.location,
         respawn: respawnMinutes,
-        isRandom: !!m.isRandom,
+        isRandom: derivedIsRandom,
         lastCutAt: last.toISOString(),
         nextSpawnAt: new Date(nextMs).toISOString(),
-        overdue: nextMs < nowMs,
+        // 지남(유예 포함) 여부: 다음 젠 + 유예 시점 기준
+        overdue: nextMs + this.OVERDUE_GRACE_MS < nowMs,
         dazeCount,
         _sortMs: nextMs,
       };
 
-      if (missed >= 5) forgotten.push(row);
+      // 🔧 분리 기준 조정: 1주기라도 놓치면 미입력으로
+      if (missed >= 1) forgotten.push(row);
       else tracked.push(row);
     }
 
@@ -216,7 +225,7 @@ export class DashboardService {
         location: m.location,
         genTime: safeGenTime,
         respawn: this.toNumber((m as any).respawn),
-        isRandom: !!m.isRandom,
+        isRandom: false, // 🔧 고정은 항상 false로 강제
         lastCutAt: last ? last.toISOString() : null,
       };
     });
@@ -230,13 +239,18 @@ export class DashboardService {
     };
   }
 
+  /**
+   * 마지막 컷 이후 다음 젠과 미입력 회수를 계산
+   * - nextMs: now 이전이면 now 를 넘어설 때까지 step을 더해 미래 젠 시각 산출
+   * - missed: last 이후로 지난 주기 수( now ≥ last+step 일 때부터 1, 그 뒤로 주기마다 +1 )
+   */
   private rollNextAndMissed(lastMs: number, respawnMin: number, nowMs: number) {
     const step = respawnMin * 60 * 1000;
     if (step <= 0) return { nextMs: lastMs, missed: 0 };
     let next = lastMs + step;
     if (nowMs <= next) return { nextMs: next, missed: 0 };
     const diff = nowMs - next;
-    const k = Math.floor(diff / step) + 1;
+    const k = Math.floor(diff / step) + 1; // 지난 주기 수
     next = next + k * step;
     return { nextMs: next, missed: k };
   }
