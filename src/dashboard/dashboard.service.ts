@@ -84,16 +84,15 @@ export class DashboardService {
       lastCutAt: string | null;
     }>;
   }> {
-    // 고정보스 판단/젠시간을 위해 isFixBoss, genTime까지 선택
     const metas = await this.prisma.bossMeta.findMany({
       select: {
         id: true,
         name: true,
         location: true,
         respawn: true,
-        isRandom: true,   // ⚠️ DB 필드가 있더라도 신뢰하지 않고 아래에서 파생 isRandom 파생값으로 대체
-        isFixBoss: true,  // "Y" | "N"
-        genTime: true,    // Int? (0~1439)
+        isRandom: true,   // DB 값 (tinyint 0/1)
+        isFixBoss: true,
+        genTime: true,
       },
       orderBy: [{ orderNo: 'asc' }, { name: 'asc' }],
     });
@@ -101,7 +100,6 @@ export class DashboardService {
     const clanId = this.toBigIntOrNull(clanIdRaw);
     const nowMs = Date.now();
 
-    // 보스명 기준 최근 컷
     const latestByBoss: Record<string, Date> = {};
     if (clanId) {
       const grouped = await this.prisma.bossTimeline.groupBy({
@@ -114,7 +112,6 @@ export class DashboardService {
       }
     }
 
-    // ⬇️ 클랜별 멍 카운터 조회(최근 타임라인의 noGenCount)
     let dazeMap: Map<string, number> = new Map();
     if (clanId) {
       const rows = await this.prisma.$queryRaw<
@@ -146,21 +143,19 @@ export class DashboardService {
       return false;
     };
 
-    // 메타 분리 (고정/랜덤)
     const fixedMetas = metas.filter(m => isFixed((m as any).isFixBoss));
     const normalMetas = metas.filter(m => !isFixed((m as any).isFixBoss));
 
-    // ── 비고정(랜덤): tracked / forgotten 계산 ──
     const tracked: Array<BossDto & { _sortMs: number }> = [];
     const forgotten: Array<BossDto & { _sortMs: number }> = [];
 
     for (const m of normalMetas) {
-      const respawnMinutes = this.toNumber((m as any).respawn);
+      const respawnMinutes = this.toNumber(m.respawn);
       const last = latestByBoss[m.name] ?? null;
       const dazeCount = dazeMap.get(m.name) ?? 0;
 
-      // ⚠️ 파생 isRandom: isFixBoss가 N이면 랜덤 취급
-      const derivedIsRandom = true;
+      // 👉 DB 값 그대로 boolean 변환
+      const derivedIsRandom = !!m.isRandom;
 
       if (!last) {
         forgotten.push({
@@ -186,16 +181,14 @@ export class DashboardService {
         name: m.name,
         location: m.location,
         respawn: respawnMinutes,
-        isRandom: derivedIsRandom,
+        isRandom: derivedIsRandom,   // ✅ 여기 반영
         lastCutAt: last.toISOString(),
         nextSpawnAt: new Date(nextMs).toISOString(),
-        // 지남(유예 포함) 여부: 다음 젠 + 유예 시점 기준
         overdue: nextMs + this.OVERDUE_GRACE_MS < nowMs,
         dazeCount,
         _sortMs: nextMs,
       };
 
-      // 🔧 분리 기준 조정: 1주기라도 놓치면 미입력으로
       if (missed >= 1) forgotten.push(row);
       else tracked.push(row);
     }
@@ -206,16 +199,9 @@ export class DashboardService {
     const trackedOut: BossDto[] = tracked.map(({ _sortMs, ...rest }) => rest);
     const forgottenOut: BossDto[] = forgotten.map(({ _sortMs, ...rest }) => rest);
 
-    // ── 고정: fixed 목록 생성 ──
     const fixed = fixedMetas.map(m => {
       const last = latestByBoss[m.name] ?? null;
-
-      const rawGen =
-        (m as any).genTime ??
-        (m as any).genTimeMin ??
-        (m as any).gen_time ??
-        null;
-
+      const rawGen = m.genTime ?? null;
       const genTimeNum = rawGen == null ? null : Number(rawGen);
       const safeGenTime = Number.isFinite(genTimeNum) ? genTimeNum : null;
 
@@ -224,8 +210,8 @@ export class DashboardService {
         name: m.name,
         location: m.location,
         genTime: safeGenTime,
-        respawn: this.toNumber((m as any).respawn),
-        isRandom: false, // 🔧 고정은 항상 false로 강제
+        respawn: this.toNumber(m.respawn),
+        isRandom: false,  // 고정 보스는 항상 false
         lastCutAt: last ? last.toISOString() : null,
       };
     });
@@ -303,22 +289,33 @@ export class DashboardService {
       participants?: string[];
       imageFileName?: string;
       actorLoginId?: string;
+      bossName?: string;
     },
     actorLoginIdFromArg?: string,
   ) {
     if (!clanIdRaw) throw new BadRequestException('혈맹 정보가 필요합니다.');
     const clanId = BigInt(clanIdRaw);
 
-    const meta = await this.prisma.bossMeta.findUnique({
-      where: { id: BigInt(bossMetaId) },
-      select: { name: true },
-    });
-    if (!meta) throw new BadRequestException('보스 메타를 찾을 수 없습니다.');
-
     const cutAt = new Date(body.cutAtIso);
     if (isNaN(cutAt.getTime())) {
       throw new BadRequestException('cutAtIso 형식이 올바르지 않습니다.');
     }
+
+    // 보스 메타 조회
+    let meta = await this.prisma.bossMeta.findUnique({
+      where: { id: BigInt(bossMetaId) },
+      select: { name: true },
+    });
+    if (!meta && body.bossName) {
+      meta = await this.prisma.bossMeta.findUnique({
+        where: { name: body.bossName },
+        select: { name: true },
+      });
+    }
+    if (!meta) throw new BadRequestException('보스 메타를 찾을 수 없습니다.');
+
+    // ✅ bossName 항상 보장
+    const bossName = body.bossName ?? meta.name;
 
     const actor = body.actorLoginId ?? actorLoginIdFromArg ?? 'system';
     const participants = (body.participants ?? []).map(s => s.trim()).filter(Boolean);
@@ -353,7 +350,7 @@ export class DashboardService {
       const timeline = await tx.bossTimeline.create({
         data: {
           clanId,
-          bossName: meta.name,
+          bossName, // ✅ 항상 값 있음
           imageIds: this.normalizeImageIds(body) as Prisma.JsonArray,
           cutAt,
           createdBy: actor,
@@ -403,7 +400,7 @@ export class DashboardService {
     });
 
     // 컷 시 멍 카운터 0으로 리셋
-    await this.resetBossCounter(clanId, meta.name);
+    await this.resetBossCounter(clanId, bossName);
 
     return { ok: true, id: String(created.id) };
   }
