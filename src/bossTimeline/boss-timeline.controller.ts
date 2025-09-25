@@ -20,10 +20,13 @@ export class BossTimelineController {
 
   /** 잡은 보스 타임라인 목록 */
   @Post()
-  async list(@Req() req: any): Promise<ListTimelinesResp> {
+  async list(
+    @Req() req: any,
+    @Body() body: { fromDate?: string; toDate?: string },   // ⬅️ 추가
+  ): Promise<ListTimelinesResp> {
     const clanId = req.user?.clanId ?? null;
     if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
-    return this.svc.listForClan(clanId);
+    return this.svc.listForClan(clanId, body.fromDate, body.toDate);  // ⬅️ 인자 전달
   }
 
   /** 아이템 판매 처리 (PATCH → POST) */

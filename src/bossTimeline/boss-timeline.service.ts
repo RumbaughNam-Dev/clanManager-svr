@@ -21,19 +21,46 @@ export class BossTimelineService {
   }
 
   /** 혈맹별 보스 컷 타임라인 목록 */
-  async listForClan(clanIdRaw: any): Promise<ListTimelinesResp> {
+  async listForClan(
+    clanIdRaw: any,
+    fromDate?: string,
+    toDate?: string,
+  ): Promise<ListTimelinesResp> {
     const clanId = this.toBigIntOrNull(clanIdRaw);
     if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
 
+    // 기간 조건 만들기
+    let dateFilter: Prisma.BossTimelineWhereInput = {};
+    if (fromDate || toDate) {
+      const from = fromDate ? new Date(fromDate) : undefined;
+      const to = toDate ? new Date(toDate) : undefined;
+
+      // 유효성 체크
+      if (from && to && (to.getTime() - from.getTime()) > 1000 * 60 * 60 * 24 * 31) {
+        throw new BadRequestException('검색 기간은 최대 31일까지만 가능합니다.');
+      }
+
+      dateFilter.cutAt = {};
+      if (from) dateFilter.cutAt.gte = from;
+      if (to) {
+        // toDate를 포함시키려면 23:59:59까지 확장
+        to.setHours(23, 59, 59, 999);
+        dateFilter.cutAt.lte = to;
+      }
+    }
+
     const rows = await this.prisma.bossTimeline.findMany({
-      where: { clanId },
+      where: {
+        clanId,
+        ...dateFilter,   // ⬅️ 추가된 기간 조건
+      },
       orderBy: { cutAt: 'desc' },
       select: {
         id: true,
         bossName: true,
         cutAt: true,
         createdBy: true,
-        imageIds: true,        // ✅ imageIds(Json) 선택
+        imageIds: true,
         noGenCount: true,
         lootItems: {
           select: {
