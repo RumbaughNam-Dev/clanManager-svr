@@ -127,4 +127,19 @@ export class DashboardController {
     const clanId = req.user?.clanId;
     return this.svc.incDazeByBossMeta(clanId, id);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('import-discord')
+  async importDiscord(
+    @Req() req: any,
+    @Body() body: { text: string },
+  ) {
+    const clanIdRaw = req.user?.clanId;
+    const actorLoginId = req.user?.loginId ?? 'system';
+    if (!clanIdRaw) throw new BadRequestException('혈맹 정보가 없습니다.');
+    if (!body?.text) throw new BadRequestException('text가 필요합니다.');
+
+    const clanId = BigInt(clanIdRaw);   // ✅ string → bigint 변환
+    return this.svc.importDiscord(clanId, actorLoginId, body.text);
+  }
 }

@@ -61,7 +61,7 @@ export class BossTimelineService {
         cutAt: true,
         createdBy: true,
         imageIds: true,
-        noGenCount: true,
+        noGenCount: true,   // ✅ noGenCount 선택
         lootItems: {
           select: {
             id: true,
@@ -98,8 +98,8 @@ export class BossTimelineService {
         bossName: t.bossName,
         cutAt: t.cutAt.toISOString(),
         createdBy: t.createdBy,
-        imageIds,                         // ✅ 프런트 호환
-        noGenCount: t.noGenCount ?? 0,
+        imageIds,                         
+        noGenCount: t.noGenCount ?? 0,   // ✅ 프론트에 내려줌
         items: (t.lootItems ?? []).map((it) => ({
           id: String(it.id),
           itemName: it.itemName,
@@ -395,6 +395,36 @@ export class BossTimelineService {
     await this.prisma.bossTimeline.update({
       where: { id: timelineId },
       data: { noGenCount: 0 },
+    });
+  }
+
+  /** 보스 컷 삭제 */
+  async deleteTimeline(clanIdRaw: any, timelineIdRaw: string) {
+    const clanId = this.toBigIntOrNull(clanIdRaw);
+    const timelineId = this.toBigInt(timelineIdRaw, "잘못된 타임라인 ID");
+
+    // 권한 체크
+    await this.ensureTimelineInClan(timelineId, clanId);
+
+    // 관련된 lootItems, distributions도 함께 삭제 (CASCADE 또는 수동 처리)
+    await this.prisma.$transaction(async (tx) => {
+      await tx.lootDistribution.deleteMany({ where: { timelineId } });
+      await tx.lootItem.deleteMany({ where: { timelineId } });
+      await tx.bossTimeline.delete({ where: { id: timelineId } });
+    });
+
+    return { ok: true };
+  }
+
+  async cancelDaze(timelineId: string) {
+    const tId = BigInt(timelineId);
+    const tl = await this.prisma.bossTimeline.findUnique({ where: { id: tId } });
+    if (!tl) throw new NotFoundException('타임라인을 찾을 수 없습니다.');
+    if ((tl.noGenCount ?? 0) <= 0) throw new BadRequestException('멍 기록이 없습니다.');
+    return this.prisma.bossTimeline.update({
+      where: { id: tId },
+      data: { noGenCount: { decrement: 1 } },
+      select: { id: true, noGenCount: true },
     });
   }
 }

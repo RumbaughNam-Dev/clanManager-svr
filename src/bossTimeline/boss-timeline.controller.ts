@@ -113,4 +113,17 @@ export class BossTimelineController {
       atIso: body?.atIso,
     });
   }
+
+  /** 보스 컷 삭제 */
+  @Post(':timelineId/delete')
+  async deleteTimeline(@Req() req: any, @Param('timelineId') timelineId: string) {
+    const clanId = req.user?.clanId ?? null;
+    if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
+    return this.svc.deleteTimeline(clanId, timelineId);
+  }
+
+  @Post(':timelineId/daze/cancel')
+  async cancelDaze(@Param('timelineId') timelineId: string) {
+    return this.svc.cancelDaze(timelineId);
+  }
 }

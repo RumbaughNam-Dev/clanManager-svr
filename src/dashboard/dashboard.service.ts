@@ -23,6 +23,7 @@ type FixedBossDto = {
   respawn: number;
   isRandom: boolean;
   lastCutAt: string | null;   // 최근 컷 (잡힘 여부 판정용)
+  nextSpawnAt: string | null;
 };
 
 @Injectable()
@@ -31,6 +32,7 @@ export class DashboardService {
 
   // 유예 5분 (서버에서도 동일하게 사용)
   private readonly OVERDUE_GRACE_MS = 5 * 60 * 1000;
+  private readonly DAY_MS = 24 * 60 * 60 * 1000;
 
   private toBigIntOrNull(v: any) {
     if (v == null) return null;
@@ -82,6 +84,7 @@ export class DashboardService {
       respawn: number;
       isRandom: boolean;
       lastCutAt: string | null;
+      nextSpawnAt: string | null;
     }>;
   }> {
     const metas = await this.prisma.bossMeta.findMany({
@@ -199,21 +202,46 @@ export class DashboardService {
     const trackedOut: BossDto[] = tracked.map(({ _sortMs, ...rest }) => rest);
     const forgottenOut: BossDto[] = forgotten.map(({ _sortMs, ...rest }) => rest);
 
-    const fixed = fixedMetas.map(m => {
-      const last = latestByBoss[m.name] ?? null;
-      const rawGen = m.genTime ?? null;
-      const genTimeNum = rawGen == null ? null : Number(rawGen);
-      const safeGenTime = Number.isFinite(genTimeNum) ? genTimeNum : null;
+const fixed = fixedMetas.map(m => {
+  const last = latestByBoss[m.name] ?? null;
+  const rawGen = m.genTime ?? null;
+  const genTimeNum = rawGen == null ? null : Number(rawGen);
+  const safeGenTime = Number.isFinite(genTimeNum) ? genTimeNum : null;
 
-      return {
-        id: String(m.id),
-        name: m.name,
-        location: m.location,
-        genTime: safeGenTime,
-        respawn: this.toNumber(m.respawn),
-        isRandom: false,  // 고정 보스는 항상 false
-        lastCutAt: last ? last.toISOString() : null,
-      };
+  let nextSpawnAt: string | null = null;
+  let sortMs = Number.MAX_SAFE_INTEGER;
+
+  if (m.id.toString() === "36" || m.id.toString() === "37") {
+    const next = this.calcGiranNextSpawn(m.id.toString());
+    nextSpawnAt = next ? next.toISOString() : null;
+    sortMs = next ? next.getTime() : Number.MAX_SAFE_INTEGER;
+  } else {
+    const nextMs = this.calcFixedNext(m.id.toString(), safeGenTime, nowMs);
+    nextSpawnAt = nextMs ? new Date(nextMs).toISOString() : null;
+    sortMs = nextMs ?? Number.MAX_SAFE_INTEGER;
+  }
+
+  return {
+    id: String(m.id),
+    name: m.name,
+    location: m.location,
+    genTime: safeGenTime,
+    respawn: this.toNumber(m.respawn),
+    isRandom: false,
+    lastCutAt: last ? last.toISOString() : null,
+    nextSpawnAt,
+    _sortMs: sortMs,   // 🔑 정렬용 필드 추가
+  };
+});
+
+// ✅ 다음 젠 시각 기준 정렬
+fixed.sort((a, b) => a._sortMs - b._sortMs);
+
+    // ✅ nextSpawnAt 기준으로 정렬
+    fixed.sort((a, b) => {
+      const ta = a.nextSpawnAt ? new Date(a.nextSpawnAt).getTime() : Number.MAX_SAFE_INTEGER;
+      const tb = b.nextSpawnAt ? new Date(b.nextSpawnAt).getTime() : Number.MAX_SAFE_INTEGER;
+      return (ta || Number.MAX_SAFE_INTEGER) - (tb || Number.MAX_SAFE_INTEGER);
     });
 
     return {
@@ -452,5 +480,153 @@ export class DashboardService {
       ON DUPLICATE KEY UPDATE \`dazeCount\` = \`dazeCount\` + ${delta}
     `;
     return res; // 영향받은 행 수
+  }
+
+  async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const results: any[] = [];
+
+    for (const line of lines) {
+      const m = /^(\d{1,2}:\d{2})\s+(.+?)\s+\(미입력(\d+)회\)$/.exec(line);
+      if (!m) continue;
+
+      const hhmm = m[1];
+      const bossName = m[2];
+      const missedCount = Number(m[3] ?? 0);
+
+      // HH:mm → 오늘 cutAt
+      const [hh, mm] = hhmm.split(":").map(Number);
+      const cutDate = new Date();
+      cutDate.setHours(hh, mm, 0, 0);
+
+      // ✅ bossMetaId도 찾아서 저장
+      const bossMeta = await this.prisma.bossMeta.findFirst({
+        where: { name: bossName },
+        select: { id: true, name: true },
+      });
+      if (!bossMeta) {
+        results.push({ bossName, status: "보스 메타 없음" });
+        continue;
+      }
+
+      const timeline = await this.prisma.bossTimeline.create({
+        data: {
+          clanId,
+          bossName: bossMeta.name,
+          cutAt: cutDate,
+          createdBy: actorLoginId,
+          noGenCount: missedCount,
+        }
+      })
+
+      results.push({
+        bossName,
+        cutAt: cutDate.toISOString(),
+        missedCount,
+        timelineId: String(timeline.id),
+      });
+    }
+
+    return { ok: true, results };
+  }
+
+  private async cutBossForDiscord(
+    clanId: bigint,
+    bossName: string,
+    cutAt: Date,
+    miss: number,
+    actorLoginId: string,
+  ) {
+    // 1) 컷 기록
+    const bossMeta = await this.prisma.bossMeta.findFirst({ where: { name: bossName } });
+    if (!bossMeta) {
+      console.warn("[importDiscord] unknown boss:", bossName);
+      return;
+    }
+
+    const timeline = await this.prisma.bossTimeline.create({
+      data: {
+        clanId,
+        bossName,
+        cutAt,
+        createdBy: actorLoginId,
+        noGenCount: miss,
+        imageIds: [],
+      },
+    });
+
+    // miss > 0 인 경우 noGenCount 반영 → 이미 DB에 필드 있음
+    return timeline;
+  } 
+  
+  // 고정보스 nextSpawn 계산 with 예외 처리
+  private calcFixedNext(metaId: string, genTime: number | null, nowMs: number): number | null {
+    const d = new Date(nowMs);
+    const day = d.getDay(); // 0=일, 6=토
+
+    // 기란감옥 보스 ID → 주말엔 스폰 없음
+    const jailBossIds = ["32", "36", "37", "38"];
+    if (jailBossIds.includes(metaId) && (day === 0 || day === 6)) {
+      return null;
+    }
+
+    // 기감 1층: 6, 12, 18, 24시
+    if (metaId === "36") {
+      return this.calcGiranNextSpawn("36", d)?.getTime() ?? null;
+    }
+
+    // 기감 2층: 7, 14, 21시
+    if (metaId === "37") {
+      return this.calcGiranNextSpawn("37", d)?.getTime() ?? null;
+    }
+
+    // 기본 고정보스 로직
+    const n = genTime == null ? NaN : Number(genTime);
+    if (!Number.isFinite(n)) return null;
+    const cycleStart = this.cycleStartMs(nowMs);
+    const offsetMin = ((Math.floor(n) - 300 + 1440) % 1440);
+    return cycleStart + offsetMin * 60 * 1000;
+  }
+
+  private cycleStartMs(nowMs: number) {
+    const d = new Date(nowMs);
+    const base = new Date(d);
+    base.setSeconds(0, 0);
+    if (d.getHours() >= 5) base.setHours(5, 0, 0, 0);
+    else { base.setDate(base.getDate() - 1); base.setHours(5, 0, 0, 0); }
+    return base.getTime();
+  }
+
+  // 기감 보스 1층, 2층만 예외처리
+  private calcGiranNextSpawn(id: string, now = new Date()): Date | null {
+    const hourSets: Record<string, number[]> = {
+      "36": [6, 12, 18, 24], // 기감 1층
+      "37": [7, 14, 21],     // 기감 2층
+    };
+
+    const hours = hourSets[id];
+    if (!hours) return null;
+
+    // 주말 제외
+    const day = now.getDay(); // 0=일, 6=토
+    if (day === 0 || day === 6) return null;
+
+    for (const h of hours) {
+      const hh = h === 24 ? 0 : h;
+      const d = new Date(now);
+      d.setHours(hh, 0, 0, 0);
+      if (h === 24) d.setDate(d.getDate() + 1);
+
+      if (d.getTime() > now.getTime()) {
+        return d;
+      }
+    }
+
+    // 오늘 다 지났으면 내일 첫 번째 시간
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const hh = hours[0] === 24 ? 0 : hours[0];
+    tomorrow.setHours(hh, 0, 0, 0);
+    return tomorrow;
   }
 }
