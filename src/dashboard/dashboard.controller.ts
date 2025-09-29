@@ -67,7 +67,7 @@ export class DashboardController {
     }
 
     // 1) cutAtIso: 서비스는 string 필수 → 기본값으로 서버 시간 보정
-    const cutAtIso = body.cutAtIso ?? new Date().toString();
+    const cutAtIso = body.cutAtIso ?? new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 
     // 2) itemsEx: 서비스는 name 필드 기대 → itemName → name 으로 매핑
     const itemsEx =

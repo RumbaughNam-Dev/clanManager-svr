@@ -7,30 +7,29 @@ type BossDto = {
   id: string;
   name: string;
   location: string;
-  respawn: number;            // 분 단위
+  respawn: number;
   isRandom: boolean;
-  lastCutAt: string | null;   // ISO
-  nextSpawnAt: string | null; // ISO
+  lastCutAt: string | null;   // KST 문자열
+  nextSpawnAt: string | null; // KST 문자열
   overdue: boolean;
-  dazeCount: number;          // ⬅️ 클랜별 멍 누계
+  dazeCount: number;
 };
 
 type FixedBossDto = {
   id: string;
   name: string;
   location: string;
-  genTime: number | null;     // 0~1439 (자정=0, 23:59=1439)
+  genTime: number | null;
   respawn: number;
   isRandom: boolean;
-  lastCutAt: string | null;   // 최근 컷 (잡힘 여부 판정용)
-  nextSpawnAt: string | null;
+  lastCutAt: string | null;   // KST 문자열
+  nextSpawnAt: string | null; // KST 문자열
 };
 
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
-  // 유예 5분 (서버에서도 동일하게 사용)
   private readonly OVERDUE_GRACE_MS = 5 * 60 * 1000;
   private readonly DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -66,26 +65,17 @@ export class DashboardService {
     );
   }
 
-  /**
-   * 보스 목록 + (선택) 혈맹별 최신컷으로 nextSpawn 계산
-   * - 좌/중(=tracked/forgotten): isFixBoss !== 'Y'만 포함 (랜덤 보스)
-   * - 우측(=fixed): isFixBoss === 'Y'만 따로 반환 (고정 보스)
-   */
+  private toKST(date: Date | null): string | null {
+    if (!date) return null;
+    return date.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+  }
+
   async listBossesForClan(clanIdRaw?: any): Promise<{
     ok: true;
     serverTime: string;
     tracked: BossDto[];
     forgotten: BossDto[];
-    fixed: Array<{
-      id: string;
-      name: string;
-      location: string;
-      genTime: number | null;
-      respawn: number;
-      isRandom: boolean;
-      lastCutAt: string | null;
-      nextSpawnAt: string | null;
-    }>;
+    fixed: FixedBossDto[];
   }> {
     const metas = await this.prisma.bossMeta.findMany({
       select: {
@@ -93,7 +83,7 @@ export class DashboardService {
         name: true,
         location: true,
         respawn: true,
-        isRandom: true,   // DB 값 (tinyint 0/1)
+        isRandom: true,
         isFixBoss: true,
         genTime: true,
       },
@@ -139,7 +129,7 @@ export class DashboardService {
       if (v == null) return false;
       if (typeof v === 'string') {
         const s = v.trim().toUpperCase();
-        return s === 'Y' || s === 'YES' || s === 'T' || s === 'TRUE' || s === '1';
+        return ['Y','YES','T','TRUE','1'].includes(s);
       }
       if (typeof v === 'boolean') return v === true;
       if (typeof v === 'number') return v === 1;
@@ -157,7 +147,6 @@ export class DashboardService {
       const last = latestByBoss[m.name] ?? null;
       const dazeCount = dazeMap.get(m.name) ?? 0;
 
-      // 👉 DB 값 그대로 boolean 변환
       const derivedIsRandom = !!m.isRandom;
 
       if (!last) {
@@ -185,8 +174,8 @@ export class DashboardService {
         location: m.location,
         respawn: respawnMinutes,
         isRandom: derivedIsRandom,
-        lastCutAt: last ? last.toString() : null,   // ✅ 여기
-        nextSpawnAt: nextMs ? new Date(nextMs).toString() : null,  // ✅ 여기
+        lastCutAt: this.toKST(last),
+        nextSpawnAt: this.toKST(new Date(nextMs)),
         overdue: nextMs + this.OVERDUE_GRACE_MS < nowMs,
         dazeCount,
         _sortMs: nextMs,
@@ -202,82 +191,64 @@ export class DashboardService {
     const trackedOut: BossDto[] = tracked.map(({ _sortMs, ...rest }) => rest);
     const forgottenOut: BossDto[] = forgotten.map(({ _sortMs, ...rest }) => rest);
 
-const fixed = fixedMetas.map(m => {
-  const last = latestByBoss[m.name] ?? null;
-  const rawGen = m.genTime ?? null;
-  const genTimeNum = rawGen == null ? null : Number(rawGen);
-  const safeGenTime = Number.isFinite(genTimeNum) ? genTimeNum : null;
+    const fixed = fixedMetas.map(m => {
+      const last = latestByBoss[m.name] ?? null;
+      const rawGen = m.genTime ?? null;
+      const genTimeNum = rawGen == null ? null : Number(rawGen);
+      const safeGenTime = Number.isFinite(genTimeNum) ? genTimeNum : null;
 
-  let nextSpawnAt: string | null = null;
-  let sortMs = Number.MAX_SAFE_INTEGER;
+      let nextSpawnAt: string | null = null;
+      let sortMs = Number.MAX_SAFE_INTEGER;
 
-  if (m.id.toString() === "36" || m.id.toString() === "37") {
-    const next = this.calcGiranNextSpawn(m.id.toString());
-    nextSpawnAt = next ? next.toString() : null;
-    sortMs = next ? next.getTime() : Number.MAX_SAFE_INTEGER;
-  } else {
-    const nextMs = this.calcFixedNext(m.id.toString(), safeGenTime, nowMs);
-    nextSpawnAt = nextMs ? new Date(nextMs).toString() : null;
-    sortMs = nextMs ?? Number.MAX_SAFE_INTEGER;
-  }
+      if (m.id.toString() === "36" || m.id.toString() === "37") {
+        const next = this.calcGiranNextSpawn(m.id.toString());
+        nextSpawnAt = this.toKST(next ?? null);
+        sortMs = next ? next.getTime() : Number.MAX_SAFE_INTEGER;
+      } else {
+        const nextMs = this.calcFixedNext(m.id.toString(), safeGenTime, nowMs);
+        nextSpawnAt = this.toKST(nextMs ? new Date(nextMs) : null);
+        sortMs = nextMs ?? Number.MAX_SAFE_INTEGER;
+      }
 
-  return {
-    id: String(m.id),
-    name: m.name,
-    location: m.location,
-    genTime: safeGenTime,
-    respawn: this.toNumber(m.respawn),
-    isRandom: false,
-    lastCutAt: last ? last.toString() : null,     // ✅
-    nextSpawnAt,                                     // 위에서 ISO로 계산한 값
-    _sortMs: sortMs,
-  };
-});
-
-// ✅ 다음 젠 시각 기준 정렬
-fixed.sort((a, b) => a._sortMs - b._sortMs);
-
-    // ✅ nextSpawnAt 기준으로 정렬
-    fixed.sort((a, b) => {
-      const ta = a.nextSpawnAt ? new Date(a.nextSpawnAt).getTime() : Number.MAX_SAFE_INTEGER;
-      const tb = b.nextSpawnAt ? new Date(b.nextSpawnAt).getTime() : Number.MAX_SAFE_INTEGER;
-      return (ta || Number.MAX_SAFE_INTEGER) - (tb || Number.MAX_SAFE_INTEGER);
+      return {
+        id: String(m.id),
+        name: m.name,
+        location: m.location,
+        genTime: safeGenTime,
+        respawn: this.toNumber(m.respawn),
+        isRandom: false,
+        lastCutAt: this.toKST(last),
+        nextSpawnAt,
+        _sortMs: sortMs,
+      };
     });
+
+    fixed.sort((a, b) => a._sortMs - b._sortMs);
 
     return {
       ok: true,
-      serverTime: this.formatDate(new Date()),
+      serverTime: this.toKST(new Date()) ?? "",
       tracked: trackedOut,
       forgotten: forgottenOut,
       fixed,
     };
   }
 
-  /**
-   * 마지막 컷 이후 다음 젠과 미입력 회수를 계산
-   * - nextMs: now 이전이면 now 를 넘어설 때까지 step을 더해 미래 젠 시각 산출
-   * - missed: last 이후로 지난 주기 수( now ≥ last+step 일 때부터 1, 그 뒤로 주기마다 +1 )
-   */
   private rollNextAndMissed(lastMs: number, respawnMin: number, nowMs: number) {
     const step = respawnMin * 60 * 1000;
     if (step <= 0) return { nextMs: lastMs, missed: 0 };
     let next = lastMs + step;
     if (nowMs <= next) return { nextMs: next, missed: 0 };
     const diff = nowMs - next;
-    const k = Math.floor(diff / step) + 1; // 지난 주기 수
+    const k = Math.floor(diff / step) + 1;
     next = next + k * step;
     return { nextMs: next, missed: k };
   }
 
   private formatDate(d: Date): string {
-    const z = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
+    return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
   }
 
-  /**
-   * 안전 업서트: 복합유니크가 없거나 Client 타입이 구버전이어도 동작
-   * - updateMany → (없으면) create → (경합 시) 최종 updateMany 재시도
-   */
   private async incrementBossCounter(clanId: bigint, bossName: string, delta: number) {
     await this.prisma.$transaction(async (tx) => {
       const updated = await tx.bossCounter.updateMany({
@@ -287,11 +258,8 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       if (updated.count > 0) return;
 
       try {
-        await tx.bossCounter.create({
-          data: { clanId, bossName, dazeCount: Math.max(1, delta) },
-        });
+        await tx.bossCounter.create({ data: { clanId, bossName, dazeCount: Math.max(1, delta) } });
       } catch {
-        // 동시성으로 create 유니크 충돌 시 마지막 보정
         await tx.bossCounter.updateMany({
           where: { clanId, bossName },
           data: { dazeCount: { increment: delta } },
@@ -300,25 +268,10 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
     });
   }
 
-  /**
-   * 보스 컷 생성
-   * - BossTimeline 1건, LootItem/Distribution 생성
-   * - 컷 성공 시 해당 보스 멍 카운터 0으로 리셋
-   */
   async cutBoss(
     clanIdRaw: string | undefined,
     bossMetaId: string,
-    body: {
-      cutAtIso: string;
-      looterLoginId?: string | null;
-      items?: string[];
-      itemsEx?: Array<{ name: string; lootUserId?: string | null }>;
-      mode: 'DISTRIBUTE' | 'TREASURY';
-      participants?: string[];
-      imageFileName?: string;
-      actorLoginId?: string;
-      bossName?: string;
-    },
+    body: { cutAtIso: string; looterLoginId?: string | null; items?: string[]; itemsEx?: Array<{ name: string; lootUserId?: string | null }>; mode: 'DISTRIBUTE' | 'TREASURY'; participants?: string[]; imageFileName?: string; actorLoginId?: string; bossName?: string; },
     actorLoginIdFromArg?: string,
   ) {
     if (!clanIdRaw) throw new BadRequestException('혈맹 정보가 필요합니다.');
@@ -329,22 +282,13 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       throw new BadRequestException('cutAtIso 형식이 올바르지 않습니다.');
     }
 
-    // 보스 메타 조회
-    let meta = await this.prisma.bossMeta.findUnique({
-      where: { id: BigInt(bossMetaId) },
-      select: { name: true },
-    });
+    let meta = await this.prisma.bossMeta.findUnique({ where: { id: BigInt(bossMetaId) }, select: { name: true } });
     if (!meta && body.bossName) {
-      meta = await this.prisma.bossMeta.findUnique({
-        where: { name: body.bossName },
-        select: { name: true },
-      });
+      meta = await this.prisma.bossMeta.findUnique({ where: { name: body.bossName }, select: { name: true } });
     }
     if (!meta) throw new BadRequestException('보스 메타를 찾을 수 없습니다.');
 
-    // ✅ bossName 항상 보장
     const bossName = body.bossName ?? meta.name;
-
     const actor = body.actorLoginId ?? actorLoginIdFromArg ?? 'system';
     const participants = (body.participants ?? []).map(s => s.trim()).filter(Boolean);
 
@@ -353,10 +297,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
 
     if (Array.isArray(body.itemsEx) && body.itemsEx.length > 0) {
       source = body.itemsEx
-        .map(r => ({
-          itemName: (r?.name ?? '').trim(),
-          lootUserIdRaw: (r?.lootUserId ?? '').trim() || null,
-        }))
+        .map(r => ({ itemName: (r?.name ?? '').trim(), lootUserIdRaw: (r?.lootUserId ?? '').trim() || null }))
         .filter(r => !!r.itemName);
     } else {
       const items = (body.items ?? []).map(s => s.trim()).filter(Boolean);
@@ -364,10 +305,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
         (body as any).lootUsers && Array.isArray((body as any).lootUsers)
           ? (body as any).lootUsers.map((s: any) => (typeof s === 'string' ? s.trim() : '') || null)
           : [];
-      source = items.map((name, idx) => ({
-        itemName: name,
-        lootUserIdRaw: lootUsers[idx] ?? (body.looterLoginId ?? null),
-      }));
+      source = items.map((name, idx) => ({ itemName: name, lootUserIdRaw: lootUsers[idx] ?? (body.looterLoginId ?? null) }));
     }
 
     if (source.length > 0 && body.mode === 'DISTRIBUTE' && participants.length === 0) {
@@ -378,7 +316,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       const timeline = await tx.bossTimeline.create({
         data: {
           clanId,
-          bossName, // ✅ 항상 값 있음
+          bossName,
           imageIds: this.normalizeImageIds(body) as Prisma.JsonArray,
           cutAt,
           createdBy: actor,
@@ -388,10 +326,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
 
       const createdItems: { id: bigint; itemName: string }[] = [];
       for (const row of source) {
-        const lootUserId =
-          (row.lootUserIdRaw ?? '').trim() ||
-          (body.looterLoginId ?? '').trim() ||
-          actor;
+        const lootUserId = (row.lootUserIdRaw ?? '').trim() || (body.looterLoginId ?? '').trim() || actor;
 
         const it = await tx.lootItem.create({
           data: {
@@ -427,7 +362,6 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       return timeline;
     });
 
-    // 컷 시 멍 카운터 0으로 리셋
     await this.resetBossCounter(clanId, bossName);
 
     return { ok: true, id: String(created.id) };
@@ -435,10 +369,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
 
   private async resetBossCounter(clanId: bigint, bossName: string) {
     await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.bossCounter.updateMany({
-        where: { clanId, bossName },
-        data: { dazeCount: 0 },
-      });
+      const updated = await tx.bossCounter.updateMany({ where: { clanId, bossName }, data: { dazeCount: 0 } });
       if (updated.count === 0) {
         try {
           await tx.bossCounter.create({ data: { clanId, bossName, dazeCount: 0 } });
@@ -490,38 +421,30 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       const m = /^(\d{1,2}:\d{2})\s+(.+?)\s+\(미입력(\d+)회\)$/.exec(line);
       if (!m) continue;
 
-      const hhmm = m[1];
+      const [hh, mm] = m[1].split(":").map(Number);
       const bossName = m[2];
       const missedCount = Number(m[3] ?? 0);
 
-      // HH:mm → 오늘 cutAt
-      const [hh, mm] = hhmm.split(":").map(Number);
+      // ✅ cutDate를 KST로 맞춤
       const cutDate = new Date();
       cutDate.setHours(hh, mm, 0, 0);
 
-      // ✅ bossMetaId도 찾아서 저장
-      const bossMeta = await this.prisma.bossMeta.findFirst({
-        where: { name: bossName },
-        select: { id: true, name: true },
-      });
-      if (!bossMeta) {
-        results.push({ bossName, status: "보스 메타 없음" });
-        continue;
-      }
+      const bossMeta = await this.prisma.bossMeta.findFirst({ where: { name: bossName } });
+      if (!bossMeta) continue;
 
       const timeline = await this.prisma.bossTimeline.create({
         data: {
           clanId,
           bossName: bossMeta.name,
-          cutAt: cutDate,
+          cutAt: cutDate,  // DB 저장 (UTC 저장되지만 KST 시각 기반)
           createdBy: actorLoginId,
           noGenCount: missedCount,
         }
-      })
+      });
 
       results.push({
         bossName,
-        cutAt: cutDate.toString(),   // ✅ importDiscord
+        cutAt: this.toKST(cutDate),   // ✅ 응답은 KST 문자열
         missedCount,
         timelineId: String(timeline.id),
       });
