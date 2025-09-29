@@ -29,23 +29,31 @@ export class BossTimelineService {
     const clanId = this.toBigIntOrNull(clanIdRaw);
     if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
 
+    // 기간 조건 만들기
     let dateFilter: Prisma.BossTimelineWhereInput = {};
     if (fromDate || toDate) {
       const from = fromDate ? new Date(fromDate) : undefined;
       const to = toDate ? new Date(toDate) : undefined;
+
+      // 유효성 체크
       if (from && to && (to.getTime() - from.getTime()) > 1000 * 60 * 60 * 24 * 31) {
         throw new BadRequestException('검색 기간은 최대 31일까지만 가능합니다.');
       }
+
       dateFilter.cutAt = {};
       if (from) dateFilter.cutAt.gte = from;
       if (to) {
+        // toDate를 포함시키려면 23:59:59까지 확장
         to.setHours(23, 59, 59, 999);
         dateFilter.cutAt.lte = to;
       }
     }
 
     const rows = await this.prisma.bossTimeline.findMany({
-      where: { clanId, ...dateFilter },
+      where: {
+        clanId,
+        ...dateFilter,   // ⬅️ 추가된 기간 조건
+      },
       orderBy: { cutAt: 'desc' },
       select: {
         id: true,
@@ -53,7 +61,7 @@ export class BossTimelineService {
         cutAt: true,
         createdBy: true,
         imageIds: true,
-        noGenCount: true,
+        noGenCount: true,   // ✅ noGenCount 선택
         lootItems: {
           select: {
             id: true,
@@ -79,25 +87,24 @@ export class BossTimelineService {
     });
 
     const items: TimelineDto[] = rows.map((t) => {
+      // JsonValue → string[] 안전 변환
       const raw = t.imageIds as unknown;
-      const imageIds = Array.isArray(raw) ? (raw.filter((x) => typeof x === 'string') as string[]) : [];
+      const imageIds = Array.isArray(raw)
+        ? (raw.filter((x) => typeof x === 'string') as string[])
+        : [];
 
       return {
         id: String(t.id),
         bossName: t.bossName,
-        cutAt: t.cutAt
-          ? t.cutAt.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
-          : null,
+        cutAt: t.cutAt.toString(),
         createdBy: t.createdBy,
-        imageIds,
-        noGenCount: t.noGenCount ?? 0,
+        imageIds,                         
+        noGenCount: t.noGenCount ?? 0,   // ✅ 프론트에 내려줌
         items: (t.lootItems ?? []).map((it) => ({
           id: String(it.id),
           itemName: it.itemName,
           isSold: !!it.isSold,
-          soldAt: it.soldAt
-            ? it.soldAt.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
-            : null,
+          cutAt: t.cutAt.toString(),soldAt: it.soldAt ? it.soldAt.toString() : null,
           soldPrice: it.soldPrice ?? null,
           toTreasury: !!it.toTreasury,
           isTreasury: !!it.toTreasury,
@@ -107,9 +114,7 @@ export class BossTimelineService {
           lootItemId: d.lootItemId != null ? String(d.lootItemId) : null,
           recipientLoginId: d.recipientLoginId,
           isPaid: !!d.isPaid,
-          paidAt: d.paidAt
-            ? d.paidAt.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
-            : null,
+          paidAt: d.paidAt ? d.paidAt.toString() : null,
         })),
       };
     });
@@ -168,7 +173,7 @@ export class BossTimelineService {
 
     if (clanIdRaw != null) await this.ensureTimelineInClan(tId, clanIdRaw);
 
-    const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });;
+    const now = new Date();
     const actor = actorLoginId ?? 'system';
     const clanId = found.timeline?.clanId;
     const toTreasury = !!found.toTreasury;
@@ -242,7 +247,7 @@ export class BossTimelineService {
     if (isAdmin) allowed = true;
     if (!allowed) throw new ForbiddenException('본인/루팅자/관리자만 분배 체크를 변경할 수 있습니다.');
 
-    const now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });;
+    const now = new Date();
     const updated = await this.prisma.lootDistribution.update({
       where: { id: distId },
       data: { isPaid: input.isPaid, paidAt: input.isPaid ? now : null },
@@ -305,9 +310,9 @@ export class BossTimelineService {
       item: {
         id: String(t.id),
         bossName: t.bossName,
-        cutAt: t.cutAt.toString(),   // ✅
+        cutAt: t.cutAt.toString(),
         createdBy: t.createdBy,
-        imageIds,
+        imageIds,                     // ✅ 상세에도 노출(프론트 호환)
         noGenCount: t.noGenCount ?? 0,
         items: (t.lootItems ?? []).map((it) => ({
           id: String(it.id),
@@ -316,7 +321,7 @@ export class BossTimelineService {
           isTreasury: !!it.toTreasury,
           toTreasury: !!it.toTreasury,
           soldPrice: it.soldPrice ?? null,
-          soldAt: it.soldAt ? it.soldAt.toString() : null,   // ✅
+          cutAt: t.cutAt.toString(),soldAt: it.soldAt ? it.soldAt.toString() : null,
           looterLoginId: it.lootUserId ?? null,
         })),
         distributions: (t.distributions ?? []).map((d) => ({
@@ -324,7 +329,7 @@ export class BossTimelineService {
           lootItemId: d.lootItemId ? String(d.lootItemId) : null,
           recipientLoginId: d.recipientLoginId,
           isPaid: !!d.isPaid,
-          paidAt: d.paidAt ? d.paidAt.toString() : null,   // ✅
+          paidAt: d.paidAt ? d.paidAt.toString() : null,
         })),
       },
     };
@@ -352,7 +357,7 @@ export class BossTimelineService {
 
     const updated = await this.prisma.lootDistribution.update({
       where: { id: dist.id },
-      data: { isPaid, paidAt: isPaid ? new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : null },
+      data: { isPaid, paidAt: isPaid ? new Date() : null },
     });
 
     return { ok: true, item: { id: updated.id, isPaid: updated.isPaid, paidAt: updated.paidAt } };

@@ -47,7 +47,7 @@ export class AdminClanRequestsService {
     if (status === 'REJECTED') {
       const updated = await this.prisma.clanRequest.update({
         where: { id },
-        data: { status: 'REJECTED', reviewerNote: note ?? null, reviewedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) },
+        data: { status: 'REJECTED', reviewerNote: note ?? null, reviewedAt: new Date() },
         select: { id: true, status: true },
       });
       return { ok: true, data: { id: String(updated.id), status: updated.status } };
@@ -110,7 +110,7 @@ export class AdminClanRequestsService {
       // 3) 요청 상태 갱신
       await tx.clanRequest.update({
         where: { id },
-        data: { status: 'APPROVED', reviewerNote: note ?? null, reviewedAt: new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) },
+        data: { status: 'APPROVED', reviewerNote: note ?? null, reviewedAt: new Date() },
       });
     });
 

@@ -4,10 +4,10 @@ import { IsArray, IsISO8601, IsOptional, IsString } from 'class-validator';
 export interface TimelineItemDto {
   id: string;
   bossName: string;
-  cutAt: string | null;   // ⬅️ null 허용
+  cutAt: string;
   createdBy: string;
   imageIds: string[];
-  noGenCount: number;
+  noGenCount: number;            // 🔵 추가
   items: Array<{
     id: string;
     itemName: string;
