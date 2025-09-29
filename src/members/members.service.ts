@@ -25,7 +25,7 @@ export class MembersService {
         id: String(r.id),
         loginId: r.loginId,
         role: r.role as any,
-        createdAt: r.createdAt ? r.createdAt.toISOString() : null,
+        createdAt: r.createdAt ? r.createdAt.toString() : null,
       })),
     };
   }

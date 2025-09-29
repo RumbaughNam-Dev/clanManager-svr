@@ -4,6 +4,6 @@ import { Controller, Post } from '@nestjs/common';
 export class TimeController {
   @Post('now')
   now() {
-    return { nowIso: new Date().toISOString() };
+    return { nowIso: new Date().toString() };
   }
 }

@@ -76,7 +76,7 @@ export class TreasuryService {
         r.entryType === TreasuryEntryType.MANUAL_OUT ? 'OUT' : 'IN';
       return {
         id: String(r.id),
-        at: r.createdAt.toISOString(),
+        at: r.createdAt.toString(),
         type,
         entryType: r.entryType,
         // 프론트에서 SALE_TREASURY를 고정 라벨로 바꿔 그리므로 여기선 원문 유지
