@@ -561,31 +561,37 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
   
   // 고정보스 nextSpawn 계산 with 예외 처리
   private calcFixedNext(metaId: string, genTime: number | null, nowMs: number): number | null {
-    const d = new Date(nowMs);
-    const day = d.getDay(); // 0=일, 6=토
+    const now = new Date(nowMs);
 
-    // 기란감옥 보스 ID → 주말엔 스폰 없음
-    const jailBossIds = ["32", "36", "37", "38"];
+    // 기란감옥 보스 주말 제외
+    const jailBossIds = ["32", "37", "38"]; // <-- 여기서도 변경
+    const day = now.getDay(); // 0=일, 6=토
     if (jailBossIds.includes(metaId) && (day === 0 || day === 6)) {
       return null;
     }
 
     // 기감 1층: 6, 12, 18, 24시
-    if (metaId === "36") {
-      return this.calcGiranNextSpawn("36", d)?.getTime() ?? null;
+    if (metaId === "37") {
+      return this.calcGiranNextSpawn("37", now)?.getTime() ?? null;
     }
 
     // 기감 2층: 7, 14, 21시
-    if (metaId === "37") {
-      return this.calcGiranNextSpawn("37", d)?.getTime() ?? null;
+    if (metaId === "38") {
+      return this.calcGiranNextSpawn("38", now)?.getTime() ?? null;
     }
 
-    // 기본 고정보스 로직
-    const n = genTime == null ? NaN : Number(genTime);
-    if (!Number.isFinite(n)) return null;
-    const cycleStart = this.cycleStartMs(nowMs);
-    const offsetMin = ((Math.floor(n) - 300 + 1440) % 1440);
-    return cycleStart + offsetMin * 60 * 1000;
+    // 일반 고정보스 (DB genTime 분 단위 그대로 사용)
+    if (genTime == null || !Number.isFinite(genTime)) return null;
+
+    const base = new Date(now);
+    base.setHours(0, 0, 0, 0);  // 오늘 자정
+    base.setMinutes(genTime);
+
+    if (base.getTime() <= now.getTime()) {
+      base.setDate(base.getDate() + 1);
+    }
+
+    return base.getTime();
   }
 
   private cycleStartMs(nowMs: number) {
@@ -600,15 +606,15 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
   // 기감 보스 1층, 2층만 예외처리
   private calcGiranNextSpawn(id: string, now = new Date()): Date | null {
     const hourSets: Record<string, number[]> = {
-      "36": [6, 12, 18, 24], // 기감 1층
-      "37": [7, 14, 21],     // 기감 2층
+      "37": [6, 12, 18, 24], // 기감 1층
+      "38": [7, 14, 21],     // 기감 2층
     };
 
     const hours = hourSets[id];
     if (!hours) return null;
 
     // 주말 제외
-    const day = now.getDay(); // 0=일, 6=토
+    const day = now.getDay();
     if (day === 0 || day === 6) return null;
 
     for (const h of hours) {
@@ -622,7 +628,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       }
     }
 
-    // 오늘 다 지났으면 내일 첫 번째 시간
+    // 오늘 다 지났으면 내일 첫 시간
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const hh = hours[0] === 24 ? 0 : hours[0];
