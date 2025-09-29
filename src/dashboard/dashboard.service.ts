@@ -185,8 +185,8 @@ export class DashboardService {
         location: m.location,
         respawn: respawnMinutes,
         isRandom: derivedIsRandom,
-        lastCutAt: last ? last.toISOString() : null,   // ✅ 여기
-        nextSpawnAt: nextMs ? new Date(nextMs).toISOString() : null,  // ✅ 여기
+        lastCutAt: last ? last.toString() : null,   // ✅ 여기
+        nextSpawnAt: nextMs ? new Date(nextMs).toString() : null,  // ✅ 여기
         overdue: nextMs + this.OVERDUE_GRACE_MS < nowMs,
         dazeCount,
         _sortMs: nextMs,
@@ -228,7 +228,7 @@ const fixed = fixedMetas.map(m => {
     genTime: safeGenTime,
     respawn: this.toNumber(m.respawn),
     isRandom: false,
-    lastCutAt: last ? last.toISOString() : null,     // ✅
+    lastCutAt: last ? last.toString() : null,     // ✅
     nextSpawnAt,                                     // 위에서 ISO로 계산한 값
     _sortMs: sortMs,
   };
@@ -521,7 +521,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
 
       results.push({
         bossName,
-        cutAt: cutDate.toISOString(),   // ✅ importDiscord
+        cutAt: cutDate.toString(),   // ✅ importDiscord
         missedCount,
         timelineId: String(timeline.id),
       });
