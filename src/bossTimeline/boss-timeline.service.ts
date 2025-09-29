@@ -96,7 +96,7 @@ export class BossTimelineService {
       return {
         id: String(t.id),
         bossName: t.bossName,
-        cutAt: t.cutAt.toISOString(),
+        cutAt: t.cutAt.toString(),
         createdBy: t.createdBy,
         imageIds,                         
         noGenCount: t.noGenCount ?? 0,   // ✅ 프론트에 내려줌
@@ -104,7 +104,7 @@ export class BossTimelineService {
           id: String(it.id),
           itemName: it.itemName,
           isSold: !!it.isSold,
-          soldAt: it.soldAt ? it.soldAt.toISOString() : null,
+          cutAt: t.cutAt.toString(),soldAt: it.soldAt ? it.soldAt.toString() : null,
           soldPrice: it.soldPrice ?? null,
           toTreasury: !!it.toTreasury,
           isTreasury: !!it.toTreasury,
@@ -114,7 +114,7 @@ export class BossTimelineService {
           lootItemId: d.lootItemId != null ? String(d.lootItemId) : null,
           recipientLoginId: d.recipientLoginId,
           isPaid: !!d.isPaid,
-          paidAt: d.paidAt ? d.paidAt.toISOString() : null,
+          paidAt: d.paidAt ? d.paidAt.toString() : null,
         })),
       };
     });
@@ -310,7 +310,7 @@ export class BossTimelineService {
       item: {
         id: String(t.id),
         bossName: t.bossName,
-        cutAt: t.cutAt.toISOString(),
+        cutAt: t.cutAt.toString(),
         createdBy: t.createdBy,
         imageIds,                     // ✅ 상세에도 노출(프론트 호환)
         noGenCount: t.noGenCount ?? 0,
@@ -321,7 +321,7 @@ export class BossTimelineService {
           isTreasury: !!it.toTreasury,
           toTreasury: !!it.toTreasury,
           soldPrice: it.soldPrice ?? null,
-          soldAt: it.soldAt ? it.soldAt.toISOString() : null,
+          cutAt: t.cutAt.toString(),soldAt: it.soldAt ? it.soldAt.toString() : null,
           looterLoginId: it.lootUserId ?? null,
         })),
         distributions: (t.distributions ?? []).map((d) => ({
@@ -329,7 +329,7 @@ export class BossTimelineService {
           lootItemId: d.lootItemId ? String(d.lootItemId) : null,
           recipientLoginId: d.recipientLoginId,
           isPaid: !!d.isPaid,
-          paidAt: d.paidAt ? d.paidAt.toISOString() : null,
+          paidAt: d.paidAt ? d.paidAt.toString() : null,
         })),
       },
     };

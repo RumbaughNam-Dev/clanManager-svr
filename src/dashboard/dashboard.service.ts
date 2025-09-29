@@ -185,8 +185,8 @@ export class DashboardService {
         location: m.location,
         respawn: respawnMinutes,
         isRandom: derivedIsRandom,   // ✅ 여기 반영
-        lastCutAt: last.toISOString(),
-        nextSpawnAt: new Date(nextMs).toISOString(),
+        lastCutAt: last ? last.toString() : null,
+        nextSpawnAt: nextMs ? new Date(nextMs).toString() : null,
         overdue: nextMs + this.OVERDUE_GRACE_MS < nowMs,
         dazeCount,
         _sortMs: nextMs,
@@ -213,11 +213,11 @@ const fixed = fixedMetas.map(m => {
 
   if (m.id.toString() === "36" || m.id.toString() === "37") {
     const next = this.calcGiranNextSpawn(m.id.toString());
-    nextSpawnAt = next ? next.toISOString() : null;
+    nextSpawnAt = next ? next.toString() : null;
     sortMs = next ? next.getTime() : Number.MAX_SAFE_INTEGER;
   } else {
     const nextMs = this.calcFixedNext(m.id.toString(), safeGenTime, nowMs);
-    nextSpawnAt = nextMs ? new Date(nextMs).toISOString() : null;
+    nextSpawnAt = nextMs ? new Date(nextMs).toString() : null;
     sortMs = nextMs ?? Number.MAX_SAFE_INTEGER;
   }
 
@@ -228,7 +228,7 @@ const fixed = fixedMetas.map(m => {
     genTime: safeGenTime,
     respawn: this.toNumber(m.respawn),
     isRandom: false,
-    lastCutAt: last ? last.toISOString() : null,
+    lastCutAt: last ? last.toString() : null,
     nextSpawnAt,
     _sortMs: sortMs,   // 🔑 정렬용 필드 추가
   };
@@ -521,7 +521,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
 
       results.push({
         bossName,
-        cutAt: cutDate.toISOString(),
+        cutAt: cutDate.toString(),
         missedCount,
         timelineId: String(timeline.id),
       });
