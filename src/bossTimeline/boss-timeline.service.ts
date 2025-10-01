@@ -31,11 +31,12 @@ export class BossTimelineService {
 
     // 기간 조건 만들기
     let dateFilter: Prisma.BossTimelineWhereInput = {};
+
     if (fromDate || toDate) {
       const from = fromDate ? new Date(fromDate) : undefined;
       const to = toDate ? new Date(toDate) : undefined;
 
-      // 유효성 체크
+      // 유효성 체크 (31일 초과 방지)
       if (from && to && (to.getTime() - from.getTime()) > 1000 * 60 * 60 * 24 * 31) {
         throw new BadRequestException('검색 기간은 최대 31일까지만 가능합니다.');
       }
@@ -47,6 +48,18 @@ export class BossTimelineService {
         to.setHours(23, 59, 59, 999);
         dateFilter.cutAt.lte = to;
       }
+    } else {
+      // ✅ fromDate, toDate가 모두 없는 경우 → 최근 7일 기본 적용
+      const today = new Date();
+      const from = new Date(today);
+      from.setDate(today.getDate() - 7);
+      from.setHours(0, 0, 0, 0);
+      today.setHours(23, 59, 59, 999);
+
+      dateFilter.cutAt = {
+        gte: from,
+        lte: today,
+      };
     }
 
     const rows = await this.prisma.bossTimeline.findMany({
