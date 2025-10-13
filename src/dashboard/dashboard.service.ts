@@ -635,4 +635,165 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
     tomorrow.setHours(hh, 0, 0, 0);
     return tomorrow;
   }
+
+  async updateBossTimeline(
+    clanIdRaw: string,
+    timelineIdRaw: string,
+    body: {
+      cutAtIso?: string;
+      mode?: 'DISTRIBUTE' | 'TREASURY';
+      itemsEx?: Array<{ itemName: string; lootUserId?: string|null }>;
+      participants?: string[];
+      imageFileName?: string;
+    },
+    actorLoginId: string,
+  ) {
+    const clanId = BigInt(clanIdRaw);
+    const timelineId = BigInt(timelineIdRaw);
+
+    const current = await this.prisma.bossTimeline.findFirst({
+      where: { id: timelineId, clanId },
+      select: { id: true, bossName: true },
+    });
+    if (!current) throw new NotFoundException('타임라인을 찾을 수 없습니다.');
+
+    // 1) 타임라인 기본 필드 업데이트
+    const dataUpdate: Prisma.BossTimelineUpdateInput = {};
+    if (body.cutAtIso) {
+      const cutAt = new Date(body.cutAtIso);
+      if (isNaN(cutAt.getTime())) throw new BadRequestException('cutAtIso 형식 오류');
+      dataUpdate.cutAt = cutAt;
+    }
+    if (body.imageFileName) {
+      dataUpdate.imageIds = this.normalizeImageIds({ imageFileName: body.imageFileName }) as any;
+    }
+    await this.prisma.bossTimeline.update({ where: { id: timelineId }, data: dataUpdate });
+
+    // 2) 아이템/루팅자 동기화 (전체 스냅샷 방식)
+    if (Array.isArray(body.itemsEx)) {
+      const incoming = body.itemsEx
+        .map(r => ({ itemName: (r.itemName ?? '').trim(), lootUserId: (r.lootUserId ?? null) }))
+        .filter(r => !!r.itemName);
+
+      // 기존 아이템 조회
+      const existing = await this.prisma.lootItem.findMany({
+        where: { timelineId },
+        select: { id: true, itemName: true },
+      });
+
+      // 삭제 대상
+      const incomingNames = new Set(incoming.map(x => x.itemName));
+      const toDelete = existing.filter(e => !incomingNames.has(e.itemName)).map(e => e.id);
+      if (toDelete.length) {
+        await this.prisma.lootDistribution.deleteMany({ where: { lootItemId: { in: toDelete } } });
+        await this.prisma.lootItem.deleteMany({ where: { id: { in: toDelete } } });
+      }
+
+      // upsert (이름을 키로 사용)
+      for (const row of incoming) {
+        const found = existing.find(e => e.itemName === row.itemName);
+        if (found) {
+          await this.prisma.lootItem.update({
+            where: { id: found.id },
+            data: {
+              lootUserId: (row.lootUserId ?? '').trim() || actorLoginId,
+              toTreasury: body.mode === 'TREASURY' ? true : undefined,
+            },
+          });
+        } else {
+          await this.prisma.lootItem.create({
+            data: {
+              timelineId,
+              itemName: row.itemName,
+              isSold: false,
+              soldAt: null,
+              soldPrice: null,
+              toTreasury: body.mode === 'TREASURY' || false,
+              lootUserId: (row.lootUserId ?? '').trim() || actorLoginId,
+              createdBy: actorLoginId,
+            },
+          });
+        }
+      }
+    }
+
+    // 3) 참여자 동기화 (전체 스냅샷 방식)
+    if (Array.isArray(body.participants)) {
+      const list = body.participants.map(s => s.trim()).filter(Boolean);
+      // 모든 아이템에 대해 분배 테이블 재구성 (판매 전 가정)
+      const items = await this.prisma.lootItem.findMany({
+        where: { timelineId },
+        select: { id: true },
+      });
+
+      await this.prisma.$transaction(async tx => {
+        for (const it of items) {
+          // 기존 분배 삭제 후 새로 생성 (간단명료)
+          await tx.lootDistribution.deleteMany({ where: { lootItemId: it.id } });
+          if (list.length) {
+            await tx.lootDistribution.createMany({
+              data: list.map(loginId => ({
+                timelineId,
+                lootItemId: it.id,
+                recipientLoginId: loginId,
+                amount: null,
+                isPaid: false,
+                paidAt: null,
+                createdBy: actorLoginId,
+              })),
+            });
+          }
+        }
+      });
+    }
+
+    // 4) 모드 변경(혈비 귀속 ↔ 분배) 플래그 일괄 반영
+    if (body.mode) {
+      await this.prisma.lootItem.updateMany({
+        where: { timelineId },
+        data: { toTreasury: body.mode === 'TREASURY' },
+      });
+    }
+
+    return { ok: true, id: String(timelineId) };
+  }
+
+  async latestTimelineIdForBoss(clanIdRaw: string, bossName: string, preferEmpty = false) {
+    const clanId = BigInt(clanIdRaw);
+
+    if (preferEmpty) {
+      const empty = await this.prisma.$queryRaw<{ id: bigint }[]>`
+        SELECT t.id
+        FROM BossTimeline t
+        LEFT JOIN LootItem li ON li.timelineId = t.id
+        LEFT JOIN LootDistribution ld ON ld.timelineId = t.id
+        WHERE t.clanId = ${clanId} AND t.bossName = ${bossName}
+        GROUP BY t.id, t.cutAt
+        HAVING COUNT(li.id) = 0 AND COUNT(ld.id) = 0
+        ORDER BY t.cutAt DESC
+        LIMIT 1
+      `;
+      if (empty.length > 0) {
+        return { ok: true, id: String(empty[0].id), empty: true }; // ✅ 빈 타임라인
+      }
+    }
+
+    // 일반 최신
+    const row = await this.prisma.bossTimeline.findFirst({
+      where: { clanId, bossName },
+      select: { id: true },
+      orderBy: { cutAt: 'desc' },
+    });
+    if (!row) return { ok: true, id: null, empty: true };
+
+    // ✅ 최신 타임라인의 빈 여부 계산
+    const stat = await this.prisma.$queryRaw<{ li: bigint; ld: bigint }[]>`
+      SELECT
+        (SELECT COUNT(*) FROM LootItem        WHERE timelineId = ${row.id}) AS li,
+        (SELECT COUNT(*) FROM LootDistribution WHERE timelineId = ${row.id}) AS ld
+    `;
+    const empty = (Number(stat[0]?.li ?? 0) === 0) && (Number(stat[0]?.ld ?? 0) === 0);
+
+    return { ok: true, id: String(row.id), empty };
+  }
 }

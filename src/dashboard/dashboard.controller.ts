@@ -1,15 +1,16 @@
-// src/dashboard/dashboard.controller.ts
 import {
   BadRequestException,
   Body,
   Controller,
   Post,
+  Patch,
   Param,
   Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -32,7 +33,7 @@ export class DashboardController {
   @Post('bosses')
   async list(@Req() req: any) {
     const clanId = req.user?.clanId ?? null;
-    return this.svc.listBossesForClan(clanId); // 래핑 없이 그대로
+    return this.svc.listBossesForClan(clanId);
   }
 
   /**
@@ -121,7 +122,7 @@ export class DashboardController {
     return { ok: true, fileName: file.filename };
   }
 
-  @Post('/v1/dashboard/bosses/:id/daze')
+  @Post('bosses/:id/daze')
   async incDaze(@Param('id') id: string, @Req() req: any) {
     // JWT에서 clanId 꺼내는 방식은 프로젝트 컨벤션대로
     const clanId = req.user?.clanId;
@@ -141,5 +142,58 @@ export class DashboardController {
 
     const clanId = BigInt(clanIdRaw);   // ✅ string → bigint 변환
     return this.svc.importDiscord(clanId, actorLoginId, body.text);
+  }
+
+   /**
+    * 컷 타임라인 업데이트 (사후 정보 입력/수정)
+    */
+   @UseGuards(JwtAuthGuard)
+   @Patch('boss-timelines/:id')
+   async updateBossTimeline(
+     @Req() req: any,
+     @Param('id') timelineId: string,
+     @Body() body: {
+       cutAtIso?: string;
+       mode?: 'DISTRIBUTE' | 'TREASURY';
+       itemsEx?: { itemName: string; lootUserId?: string | null }[];
+       participants?: string[];
+       imageFileName?: string;
+     },
+   ) {
+     const clanId = req.user?.clanId;
+     const actorLoginId = req.user?.loginId ?? 'system';
+     if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
+     return this.svc.updateBossTimeline(String(clanId), timelineId, body, actorLoginId);
+   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('boss-timelines/:id')               // ✅ POST 알리아스
+  async updateBossTimelineByPost(
+    @Req() req: any,
+    @Param('id') timelineId: string,
+    @Body() body: {
+      cutAtIso?: string;
+      mode?: 'DISTRIBUTE' | 'TREASURY';
+      itemsEx?: { itemName: string; lootUserId?: string | null }[];
+      participants?: string[];
+      imageFileName?: string;
+    },
+  ) {
+    const clanId = req.user?.clanId;
+    const actorLoginId = req.user?.loginId ?? 'system';
+    if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
+    return this.svc.updateBossTimeline(String(clanId), timelineId, body, actorLoginId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('boss-timelines/latest-id')
+  async latestTimelineId(
+    @Req() req: any,
+    @Body() body: { bossName: string; preferEmpty?: boolean },
+  ) {
+     const clanId = req.user?.clanId;
+     if (!clanId) throw new BadRequestException('혈맹 정보가 없습니다.');
+     if (!body?.bossName) throw new BadRequestException('bossName이 필요합니다.');
+    return this.svc.latestTimelineIdForBoss(String(clanId), body.bossName, !!body.preferEmpty);
   }
 }
