@@ -482,53 +482,154 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
     return res; // 영향받은 행 수
   }
 
-  async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const results: any[] = [];
+async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
-    for (const line of lines) {
-      const m = /^(\d{1,2}:\d{2})\s+(.+?)\s+\(미입력(\d+)회\)$/.exec(line);
-      if (!m) continue;
+  type Ok = {
+    bossName: string;
+    nextSpawnAt: string;
+    cutAt: string;
+    missedCount: number;
+    timelineId: string;
+    status: "ok";
+  };
+  type Fail = { line?: string; bossName?: string; status: string };
 
-      const hhmm = m[1];
-      const bossName = m[2];
-      const missedCount = Number(m[3] ?? 0);
+  const results: Array<Ok | Fail> = [];
 
-      // HH:mm → 오늘 cutAt
-      const [hh, mm] = hhmm.split(":").map(Number);
-      const cutDate = new Date();
-      cutDate.setHours(hh, mm, 0, 0);
+  // 허용 패턴
+  // 1) "HH:mm[:ss] 보스명 (미입력5회)"  ← 괄호/공백/회 변형 허용
+  const RX_WITH_PAREN =
+    /^(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+?)\s*\(\s*미입력\s*(\d+)\s*회?\s*\)\s*$/;
 
-      // ✅ bossMetaId도 찾아서 저장
-      const bossMeta = await this.prisma.bossMeta.findFirst({
-        where: { name: bossName },
-        select: { id: true, name: true },
-      });
-      if (!bossMeta) {
-        results.push({ bossName, status: "보스 메타 없음" });
-        continue;
-      }
+  // 2) "HH:mm[:ss] 보스명 미입력5회"   ← 괄호 없는 변형
+  const RX_WITHOUT_PAREN_AFTER =
+    /^(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+?)\s*미입력\s*(\d+)\s*회?\s*$/;
 
-      const timeline = await this.prisma.bossTimeline.create({
-        data: {
-          clanId,
-          bossName: bossMeta.name,
-          cutAt: cutDate,
-          createdBy: actorLoginId,
-          noGenCount: missedCount,
+  // 3) "HH:mm[:ss] 보스명" ← 미입력 표기 자체가 없는 단순 라인
+  const RX_TIME_NAME_ONLY = /^(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+?)$/;
+
+  const parseHmsToToday = (hms: string): Date | null => {
+    const parts = hms.split(":").map(Number);
+    const [hh, mm, ss = 0] = parts;
+    if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null;
+    const d = new Date();
+    d.setHours(hh, mm, ss, 0);
+    return d;
+  };
+
+  const normalizeBossName = (raw: string) => {
+    // 공백 정리
+    let name = String(raw ?? "").replace(/\s+/g, " ").trim();
+    if (!name) return { name, hadMeng: false };
+
+    // 단어 끝/중복 "멍" 토큰 제거 (예: "질풍 멍 멍" → "질풍")
+    const tokens = name.split(" ").filter(Boolean);
+    const stripped = tokens.filter(t => t !== "멍");
+    const hadMeng = stripped.length !== tokens.length;
+
+    // 혹시 앞뒤에 특수 괄호류가 붙어있으면 제거
+    name = stripped.join(" ").replace(/[()\[\]{}]+/g, "").trim();
+    return { name, hadMeng };
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    let hms: string | null = null;
+    let bossNameRaw: string | null = null;
+    let missedCount: number | null = null;
+
+    // 1) 괄호 패턴 시도
+    let m = RX_WITH_PAREN.exec(line);
+    if (m) {
+      hms = m[1];
+      bossNameRaw = m[2];
+      missedCount = Number(m[3] ?? 0) || 0;
+    } else {
+      // 2) 괄호 없는 "미입력X회" 패턴 시도
+      m = RX_WITHOUT_PAREN_AFTER.exec(line);
+      if (m) {
+        hms = m[1];
+        bossNameRaw = m[2];
+        missedCount = Number(m[3] ?? 0) || 0;
+      } else {
+        // 3) 시간 + 이름만 있는 경우
+        m = RX_TIME_NAME_ONLY.exec(line);
+        if (m) {
+          hms = m[1];
+          bossNameRaw = m[2];
+          missedCount = 0; // 기본 0
         }
-      })
-
-      results.push({
-        bossName,
-        cutAt: cutDate.toISOString(),
-        missedCount,
-        timelineId: String(timeline.id),
-      });
+      }
     }
 
-    return { ok: true, results };
+    if (!hms || !bossNameRaw) {
+      results.push({ line, status: "pattern_mismatch" });
+      continue;
+    }
+
+    const nextSpawnAt = parseHmsToToday(hms);
+    if (!nextSpawnAt) {
+      results.push({ line, status: "invalid_time" });
+      continue;
+    }
+
+    // 보스명 정규화 (멍 토큰 제거)
+    const { name: bossNameNorm, hadMeng } = normalizeBossName(bossNameRaw);
+    if (!bossNameNorm) {
+      results.push({ line, status: "empty_boss_name" });
+      continue;
+    }
+
+    // 괄호/명시 숫자가 없고 보스명에 '멍' 토큰이 있었다면 missedCount=1로 간주
+    if ((missedCount ?? 0) === 0 && hadMeng) {
+      missedCount = 1;
+    }
+    missedCount = missedCount ?? 0;
+
+    // BossMeta 조회 (정규화된 이름으로)
+    const bossMeta = await this.prisma.bossMeta.findFirst({
+      where: { name: bossNameNorm },
+      select: { id: true, name: true, respawn: true },
+    });
+
+    if (!bossMeta) {
+      results.push({ bossName: bossNameNorm, status: "보스 메타 없음" });
+      continue;
+    }
+
+    // respawn 검증
+    const respawnMin = Number(bossMeta.respawn);
+    if (!Number.isFinite(respawnMin) || respawnMin <= 0) {
+      results.push({ bossName: bossMeta.name, status: `유효하지 않은 respawn: ${bossMeta.respawn}` });
+      continue;
+    }
+
+    // 규칙: 제공된 시간 = "다음 젠" → cutAt = nextSpawnAt - respawn(분)
+    const cutAt = new Date(nextSpawnAt.getTime() - respawnMin * 60 * 1000);
+
+    const timeline = await this.prisma.bossTimeline.create({
+      data: {
+        clanId,
+        bossName: bossMeta.name,
+        cutAt,
+        createdBy: actorLoginId,
+        noGenCount: missedCount,
+      },
+    });
+
+    results.push({
+      bossName: bossMeta.name,
+      nextSpawnAt: nextSpawnAt.toISOString(),
+      cutAt: cutAt.toISOString(),
+      missedCount,
+      timelineId: String(timeline.id),
+      status: "ok",
+    });
   }
+
+  return { ok: true, results };
+}
 
   private async cutBossForDiscord(
     clanId: bigint,
