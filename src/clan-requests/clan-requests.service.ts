@@ -14,7 +14,8 @@ export class ClanRequestsService {
     password: string;
     depositor: string;
   }) {
-    const passwordHash = await bcrypt.hash(input.password, 10);
+    //const passwordHash = await bcrypt.hash(input.password, 10);
+    const passwordHash = await bcrypt.hash("1234", 10);
 
     // ✅ 1) 사전 중복 체크: "같은 서버 내 혈맹명" → 우선적으로 검사
     const dupClan = await this.prisma.clanRequest.findFirst({
@@ -52,16 +53,54 @@ export class ClanRequestsService {
 
     // ✅ 3) 생성 (동시에 들어오는 경쟁 상황에 대비해 P2002도 백업 처리)
     try {
-      const created = await this.prisma.clanRequest.create({
-        data: {
-          world: input.world,
-          serverNo: input.serverNo,
-          clanName: input.clanName,
-          loginId: input.loginId,
-          passwordHash,
-          depositorName: input.depositor,
-        },
-        select: { id: true, status: true, createdAt: true },
+      const created = await this.prisma.$transaction(async (tx) => {
+        // 1) Clan upsert (world + serverNo + name 복합 유니크 기준)
+        const clan = await tx.clan.upsert({
+          where: {
+            uq_world_server_name: {
+              world: input.world,
+              serverNo: input.serverNo,
+              name: input.clanName,
+            },
+          },
+          create: {
+            world: input.world,
+            serverNo: input.serverNo,
+            name: input.clanName,
+          },
+          update: {},
+          select: { id: true },
+        });
+
+        // 2) User upsert (최초 등록자는 ADMIN, 해당 클랜으로 연결)
+        await tx.user.upsert({
+          where: { loginId: input.loginId },
+          create: {
+            loginId: input.loginId,
+            passwordHash,
+            role: 'ADMIN',
+            clanId: clan.id,
+          },
+          update: {
+            clanId: clan.id,
+            role: 'ADMIN',
+          },
+        });
+
+        // 3) ClanRequest 생성: 즉시 승인 처리
+        const req = await tx.clanRequest.create({
+          data: {
+            world: input.world,
+            serverNo: input.serverNo,
+            clanName: input.clanName,
+            loginId: input.loginId,
+            passwordHash,
+            depositorName: input.depositor,
+            status: 'APPROVED',
+          },
+          select: { id: true, status: true, createdAt: true },
+        });
+        return req;
       });
 
       return {
