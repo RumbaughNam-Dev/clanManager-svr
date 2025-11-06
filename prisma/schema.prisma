@@ -21,6 +21,14 @@ enum UserRole {
   USER
 }
 
+enum FeedbackStatus {
+  WRITTEN // 작성완료(작성자가 등록만 한 상태)
+  CONFIRMED // 확인완료(슈퍼관리자가 열람)
+  IN_PROGRESS // 처리중(슈퍼관리자가 상태 변경)
+  DONE // 처리완료(슈퍼관리자가 상세에서 완료)
+  REJECTED // 반려(슈퍼관리자가 반려)
+}
+
 model ClanRequest {
   id            BigInt @id @default(autoincrement())
   world         String @db.VarChar(50)
@@ -71,6 +79,13 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // ⬇️ 아래 5개는 '역방향' 관계 필드 — DB 컬럼 늘어나지 않음
+  feedbackAuthored Feedback[]        @relation("FeedbackAuthor")
+  feedbackHandled  Feedback[]        @relation("FeedbackHandler")
+  feedbackDeleted  Feedback[]        @relation("FeedbackDeleter")
+  commentAuthored  FeedbackComment[] @relation("FeedbackCommentAuthor")
+  commentDeleted   FeedbackComment[] @relation("FeedbackCommentDeleter")
 
   @@index([clanId], name: "idx_user_clan")
 }
@@ -142,9 +157,9 @@ model LootItem {
   lootUserId String? @default("") @db.VarChar(100)
 
   createdAt DateTime @default(now())
-  updatedAt  DateTime  @updatedAt
-  
-  createdBy String   @db.VarChar(50)
+  updatedAt DateTime @updatedAt
+
+  createdBy String @db.VarChar(50)
 
   distributions   LootDistribution[] @relation("ItemDistributions")
   treasuryEntries TreasuryLedger[]   @relation("LootItemTreasuryEntries")
@@ -219,4 +234,61 @@ model BossCounter {
 
   @@unique([clanId, bossName], name: "uq_bossCounterClanBoss")
   @@index([clanId], name: "idx_bossCounterClan")
+}
+
+model Feedback {
+  id      BigInt         @id @default(autoincrement())
+  title   String         @db.VarChar(200)
+  content String
+  status  FeedbackStatus @default(WRITTEN)
+
+  // 작성자
+  authorId BigInt
+  author   User   @relation("FeedbackAuthor", fields: [authorId], references: [id])
+
+  // 처리 담당자
+  handledById BigInt?
+  handledBy   User?   @relation("FeedbackHandler", fields: [handledById], references: [id])
+
+  // 소프트 삭제
+  deleted     Boolean   @default(false)
+  deletedAt   DateTime?
+  deletedById BigInt?
+  deletedBy   User?     @relation("FeedbackDeleter", fields: [deletedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 🔴 여기만 남기고, 같은 모델을 가리키는 다른 배열 필드(FeedbackComment FeedbackComment[])는 삭제
+  comments FeedbackComment[] @relation("Feedback_Comments")
+
+  @@index([createdAt])
+  @@index([authorId, createdAt])
+  @@index([status, createdAt])
+  @@index([deleted, createdAt])
+  @@index([title])
+}
+
+model FeedbackComment {
+  id BigInt @id @default(autoincrement())
+
+  feedbackId BigInt
+  feedback   Feedback @relation("Feedback_Comments", fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  authorId BigInt
+  author   User   @relation("FeedbackCommentAuthor", fields: [authorId], references: [id])
+
+  content String
+
+  deleted     Boolean   @default(false)
+  deletedAt   DateTime?
+  deletedById BigInt?
+  deletedBy   User?     @relation("FeedbackCommentDeleter", fields: [deletedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([feedbackId, createdAt])
+  @@index([authorId, createdAt])
+  @@index([deleted])
 }

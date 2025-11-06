@@ -1,7 +1,7 @@
 // src/dashboard/dashboard.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import type { Prisma } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 type BossDto = {
   id: string;
@@ -25,6 +25,10 @@ type FixedBossDto = {
   lastCutAt: string | null;   // 최근 컷 (잡힘 여부 판정용)
   nextSpawnAt: string | null;
 };
+
+type JSONValue = string | number | boolean | null | { [k: string]: JSONValue } | JSONValue[];
+type _BossTimelineUpdateArg = Parameters<PrismaClient['bossTimeline']['update']>[0];
+type BossTimelineUpdateData = _BossTimelineUpdateArg extends { data: infer D } ? D : Record<string, any>;
 
 @Injectable()
 export class DashboardService {
@@ -379,7 +383,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
         data: {
           clanId,
           bossName, // ✅ 항상 값 있음
-          imageIds: this.normalizeImageIds(body) as Prisma.JsonArray,
+          imageIds: this.normalizeImageIds(body) as JSONValue,
           cutAt,
           createdBy: actor,
         },
@@ -652,7 +656,7 @@ async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
         cutAt,
         createdBy: actorLoginId,
         noGenCount: miss,
-        imageIds: [],
+        imageIds: [] as JSONValue,
       },
     });
 
@@ -759,14 +763,14 @@ async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
     if (!current) throw new NotFoundException('타임라인을 찾을 수 없습니다.');
 
     // 1) 타임라인 기본 필드 업데이트
-    const dataUpdate: Prisma.BossTimelineUpdateInput = {};
+    const dataUpdate: BossTimelineUpdateData = {};
     if (body.cutAtIso) {
       const cutAt = new Date(body.cutAtIso);
       if (isNaN(cutAt.getTime())) throw new BadRequestException('cutAtIso 형식 오류');
       dataUpdate.cutAt = cutAt;
     }
     if (body.imageFileName) {
-      dataUpdate.imageIds = this.normalizeImageIds({ imageFileName: body.imageFileName }) as any;
+      dataUpdate.imageIds = this.normalizeImageIds({ imageFileName: body.imageFileName }) as JSONValue;
     }
     await this.prisma.bossTimeline.update({ where: { id: timelineId }, data: dataUpdate });
 

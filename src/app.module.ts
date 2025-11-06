@@ -13,6 +13,7 @@ import { TimeController } from './time/time.controller';
 import { FilesModule } from './files/files.module';
 import { BossTimelineModule } from './bossTimeline/boss-timeline.module';
 import { TreasuryModule } from './treasury/treasury.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { TreasuryModule } from './treasury/treasury.module';
     FilesModule,
     BossTimelineModule,
     TreasuryModule,
+    FeedbackModule
   ],
   controllers: [AppController, TimeController],
   providers: [AppService, PrismaService],
