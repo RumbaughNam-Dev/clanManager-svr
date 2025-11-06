@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as jwt from 'jsonwebtoken';
+import jwt, { Secret, SignOptions } from 'jsonwebtoken';
+
 
 @Injectable()
 export class TokensService {
@@ -23,10 +24,18 @@ export class TokensService {
   }
 
   signAccess(payload: any) {
-    return jwt.sign(payload, this.accessSecret, { expiresIn: this.accessExpiresIn });
+    return jwt.sign(
+      payload,
+      this.accessSecret as Secret,
+      { expiresIn: this.accessExpiresIn as unknown as SignOptions['expiresIn'] }
+    );
   }
   signRefresh(payload: any) {
-    return jwt.sign(payload, this.refreshSecret, { expiresIn: this.refreshExpiresIn });
+    return jwt.sign(
+      payload,
+      this.refreshSecret as Secret,
+      { expiresIn: this.refreshExpiresIn as unknown as SignOptions['expiresIn'] }
+    );
   }
   verifyAccess(token: string) {
     return jwt.verify(token, this.accessSecret);

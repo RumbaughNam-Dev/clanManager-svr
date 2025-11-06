@@ -14,6 +14,8 @@ import express from 'express';
 import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { FeedbackService } from './feedback.service';
+import { UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport'; 
 
 enum FeedbackStatus {
   WRITTEN = 'WRITTEN',
@@ -169,6 +171,7 @@ export class FeedbackController {
    * - fromDate ~ toDate (YYYY-MM-DD) — 31일 제한
    * - 페이지네이션 (page, size)
    */
+  @UseGuards(AuthGuard('jwt'))
   @Post('/search')
   async search(@Body() dto: SearchFeedbackDto, @Req() req: express.Request) {
     const { userId, role, loginId } = getUser(req);
@@ -192,6 +195,7 @@ export class FeedbackController {
   }
 
   /** 작성 */
+  @UseGuards(AuthGuard('jwt'))
   @Post()
   async create(@Body() dto: CreateFeedbackDto, @Req() req: express.Request) {
     const { userId, loginId } = getUser(req);
@@ -205,6 +209,7 @@ export class FeedbackController {
   }
 
   /** 상세 조회 (댓글 포함, 삭제표시 포함) */
+  @UseGuards(AuthGuard('jwt'))
   @Get(':id')
   async detail(@Param('id') id: string, @Req() req: express.Request) {
     const fid = (() => { try { return BigInt(id); } catch { return null; } })();
@@ -217,6 +222,7 @@ export class FeedbackController {
   }
 
   /** 수정 (본인 글 & 처리 시작 전) */
+  @UseGuards(AuthGuard('jwt'))
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -236,6 +242,7 @@ export class FeedbackController {
   }
 
   /** 소프트 삭제 (본인 글 & 처리 시작 전, 슈퍼관리자는 무제한) */
+  @UseGuards(AuthGuard('jwt'))
   @Post(':id/delete')
   async softDelete(@Param('id') id: string, @Req() req: express.Request) {
     const fid = (() => { try { return BigInt(id); } catch { return null; } })();
@@ -253,6 +260,7 @@ export class FeedbackController {
    * - action: DONE    → 처리완료
    * - action: REJECT  → 반려
    */
+  @UseGuards(AuthGuard('jwt'))
   @Post(':id/status')
   async changeStatus(
     @Param('id') id: string,
@@ -282,6 +290,7 @@ export class FeedbackController {
   }
 
   /** 댓글 작성 (처리 시작 전, 슈퍼관리자는 제한 없음) */
+  @UseGuards(AuthGuard('jwt'))
   @Post(':id/comments')
   async addComment(
     @Param('id') id: string,
@@ -302,6 +311,7 @@ export class FeedbackController {
   }
 
   /** 댓글 수정 (본인 댓글 & 처리 시작 전, 슈퍼관리자는 무제한) */
+  @UseGuards(AuthGuard('jwt'))
   @Patch('/comments/:commentId')
   async updateComment(
     @Param('commentId') commentId: string,
@@ -320,6 +330,7 @@ export class FeedbackController {
   }
 
   /** 댓글 소프트 삭제 (본인 댓글 & 처리 시작 전, 슈퍼관리자는 무제한) */
+  @UseGuards(AuthGuard('jwt'))
   @Post('/comments/:commentId/delete')
   async deleteComment(
     @Param('commentId') commentId: string,

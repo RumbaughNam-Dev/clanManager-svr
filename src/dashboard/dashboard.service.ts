@@ -378,12 +378,13 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       throw new BadRequestException('분배 모드에서는 참여자를 1명 이상 입력해야 합니다.');
     }
 
+    const asJsonInput = (v: unknown): any => (v === undefined ? null : v);
     const created = await this.prisma.$transaction(async (tx) => {
       const timeline = await tx.bossTimeline.create({
         data: {
           clanId,
           bossName, // ✅ 항상 값 있음
-          imageIds: this.normalizeImageIds(body) as JSONValue,
+          imageIds: asJsonInput(this.normalizeImageIds(body)),
           cutAt,
           createdBy: actor,
         },
@@ -392,7 +393,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
 
       const createdItems: { id: bigint; itemName: string }[] = [];
       for (const row of source) {
-        const lootUserId =
+        const lootUserId = 
           (row.lootUserIdRaw ?? '').trim() ||
           (body.looterLoginId ?? '').trim() ||
           actor;
@@ -656,7 +657,7 @@ async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
         cutAt,
         createdBy: actorLoginId,
         noGenCount: miss,
-        imageIds: [] as JSONValue,
+        imageIds: [] as any,
       },
     });
 
@@ -770,7 +771,7 @@ async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
       dataUpdate.cutAt = cutAt;
     }
     if (body.imageFileName) {
-      dataUpdate.imageIds = this.normalizeImageIds({ imageFileName: body.imageFileName }) as JSONValue;
+      dataUpdate.imageIds = this.normalizeImageIds({ imageFileName: body.imageFileName }) as any;
     }
     await this.prisma.bossTimeline.update({ where: { id: timelineId }, data: dataUpdate });
 
