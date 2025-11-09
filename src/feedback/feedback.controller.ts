@@ -210,7 +210,7 @@ export class FeedbackController {
 
   /** 상세 조회 (댓글 포함, 삭제표시 포함) */
   @UseGuards(AuthGuard('jwt'))
-  @Get(':id')
+  @Post(':id')
   async detail(@Param('id') id: string, @Req() req: express.Request) {
     const fid = (() => { try { return BigInt(id); } catch { return null; } })();
     if (!fid) throw new BadRequestException('id 형식이 올바르지 않습니다.');
