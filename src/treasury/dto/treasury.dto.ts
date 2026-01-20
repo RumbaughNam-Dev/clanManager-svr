@@ -3,7 +3,9 @@
 export type TreasuryEntryType =
   | 'SALE_TREASURY'
   | 'MANUAL_IN'
-  | 'MANUAL_OUT';
+  | 'MANUAL_OUT'
+  | 'PLEDGE_RAID'
+  | 'PLEDGE_RAID_CANCEL';
 
 export class ListTreasuryQueryDto {
   /** 1부터 시작 */

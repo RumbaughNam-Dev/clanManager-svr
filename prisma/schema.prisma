@@ -1,11 +1,280 @@
-// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model ClanRequest {
+  id            BigInt        @id @default(autoincrement())
+  world         String        @db.VarChar(50)
+  serverNo      Int
+  clanName      String        @db.VarChar(100)
+  loginId       String        @db.VarChar(50)
+  passwordHash  String        @db.VarChar(255)
+  depositorName String        @db.VarChar(50)
+  status        RequestStatus @default(PENDING)
+  reviewerNote  String?       @db.VarChar(255)
+  reviewedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([world, serverNo, clanName], name: "uq_world_server_clan")
+  @@unique([world, serverNo, loginId], name: "uq_world_server_login")
+  @@index([status, createdAt], map: "idx_status_created")
+}
+
+model Clan {
+  id              BigInt           @id @default(autoincrement())
+  world           String           @db.VarChar(50)
+  serverNo        Int
+  name            String           @db.VarChar(100)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  bossCounters    BossCounter[]    @relation("ClanBossCounters")
+  timelines       BossTimeline[]
+  members         User[]
+  treasuryEntries TreasuryLedger[] @relation("ClanTreasuryEntries")
+
+  @@unique([world, serverNo, name], name: "uq_world_server_name")
+}
+
+model User {
+  id               BigInt            @id @default(autoincrement())
+  clanId           BigInt?
+  loginId          String            @unique @db.VarChar(50)
+  passwordHash     String            @db.VarChar(255)
+  role             UserRole          @default(USER)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  feedbackAuthored Feedback[]        @relation("FeedbackAuthor")
+  feedbackDeleted  Feedback[]        @relation("FeedbackDeleter")
+  feedbackHandled  Feedback[]        @relation("FeedbackHandler")
+  commentAuthored  FeedbackComment[] @relation("FeedbackCommentAuthor")
+  commentDeleted   FeedbackComment[] @relation("FeedbackCommentDeleter")
+  clan             Clan?             @relation(fields: [clanId], references: [id])
+
+  @@index([clanId], map: "idx_user_clan")
+}
+
+model BossMeta {
+  id         BigInt   @id @default(autoincrement())
+  name       String   @unique @db.VarChar(50)
+  respawn    Int
+  isRandom   Boolean  @default(false)
+  location   String   @db.VarChar(255)
+  tpSave     String?  @db.VarChar(50)
+  difficulty String?  @db.VarChar(20)
+  notes      String?  @db.VarChar(255)
+  orderNo    Int      @default(0)
+  active     Boolean  @default(true)
+  isFixBoss  String   @default("N") @db.VarChar(1)
+  /// 0~1439 (자정=0, 23:59=1439) — "시간만" 저장
+  genTime    Int?     @map("genTime") @db.SmallInt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([isFixBoss], map: "idx_bossmeta_isfixboss")
+}
+
+model BossTimeline {
+  id              BigInt             @id @default(autoincrement())
+  clanId          BigInt
+  bossName        String
+  cutAt           DateTime
+  createdBy       String
+  imageIds        Json?
+  respawn         Int?
+  noGenCount      Int                @default(0)
+  createdAt       DateTime           @default(now())
+  clan            Clan               @relation(fields: [clanId], references: [id])
+  distributions   LootDistribution[] @relation("TimelineDistributions")
+  lootItems       LootItem[]         @relation("TimelineLootItems")
+  treasuryEntries TreasuryLedger[]   @relation("TimelineTreasuryEntries")
+
+  @@index([clanId], map: "idx_timeline_clan")
+}
+
+model LootItem {
+  id              BigInt             @id @default(autoincrement())
+  timelineId      BigInt
+  itemName        String             @db.VarChar(100)
+  isSold          Boolean            @default(false)
+  soldAt          DateTime?
+  soldPrice       Int?
+  toTreasury      Boolean            @default(false)
+  /// 루팅자 아이디
+  lootUserId      String?            @default("") @db.VarChar(100)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  createdBy       String             @db.VarChar(50)
+  distributions   LootDistribution[] @relation("ItemDistributions")
+  timeline        BossTimeline       @relation("TimelineLootItems", fields: [timelineId], references: [id])
+  treasuryEntries TreasuryLedger[]   @relation("LootItemTreasuryEntries")
+
+  @@index([timelineId], map: "idx_lootitem_timeline")
+}
+
+model LootDistribution {
+  id               BigInt       @id @default(autoincrement())
+  timelineId       BigInt
+  lootItemId       BigInt?
+  recipientLoginId String       @db.VarChar(50)
+  amount           Int?
+  isPaid           Boolean      @default(false)
+  paidAt           DateTime?
+  createdAt        DateTime     @default(now())
+  createdBy        String       @db.VarChar(50)
+  lootItem         LootItem?    @relation("ItemDistributions", fields: [lootItemId], references: [id])
+  timeline         BossTimeline @relation("TimelineDistributions", fields: [timelineId], references: [id])
+
+  @@index([timelineId], map: "idx_distribution_timeline")
+  @@index([lootItemId], map: "idx_distribution_lootitem")
+}
+
+model TreasuryLedger {
+  id         BigInt            @id @default(autoincrement())
+  clanId     BigInt
+  timelineId BigInt?
+  lootItemId BigInt?
+  entryType  TreasuryEntryType
+  amount     Int
+  note       String?           @db.VarChar(255)
+  balance    Int
+  createdBy  String            @db.VarChar(50)
+  createdAt  DateTime          @default(now()) @map("created_at")
+  clan       Clan              @relation("ClanTreasuryEntries", fields: [clanId], references: [id])
+  lootItem   LootItem?         @relation("LootItemTreasuryEntries", fields: [lootItemId], references: [id])
+  timeline   BossTimeline?     @relation("TimelineTreasuryEntries", fields: [timelineId], references: [id])
+
+  @@unique([clanId, entryType, timelineId, lootItemId])
+  @@index([clanId, createdAt], map: "idx_treasury_clan_created")
+  @@index([lootItemId], map: "treasury_ledger_lootItemId_fkey")
+  @@index([timelineId], map: "treasury_ledger_timelineId_fkey")
+  @@map("treasury_ledger")
+}
+
+model BossCounter {
+  id        BigInt   @id @default(autoincrement())
+  clanId    BigInt
+  bossName  String   @db.VarChar(50)
+  dazeCount Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  clan      Clan     @relation("ClanBossCounters", fields: [clanId], references: [id])
+
+  @@unique([clanId, bossName], name: "uq_bossCounterClanBoss")
+  @@index([clanId], map: "idx_bossCounterClan")
+}
+
+model Feedback {
+  id          BigInt            @id @default(autoincrement())
+  title       String            @db.VarChar(200)
+  content     String
+  status      FeedbackStatus    @default(WRITTEN)
+  authorId    BigInt
+  handledById BigInt?
+  deleted     Boolean           @default(false)
+  deletedAt   DateTime?
+  deletedById BigInt?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  author      User              @relation("FeedbackAuthor", fields: [authorId], references: [id])
+  deletedBy   User?             @relation("FeedbackDeleter", fields: [deletedById], references: [id])
+  handledBy   User?             @relation("FeedbackHandler", fields: [handledById], references: [id])
+  comments    FeedbackComment[] @relation("Feedback_Comments")
+
+  @@index([createdAt])
+  @@index([authorId, createdAt])
+  @@index([status, createdAt])
+  @@index([deleted, createdAt])
+  @@index([title])
+  @@index([deletedById], map: "Feedback_deletedById_fkey")
+  @@index([handledById], map: "Feedback_handledById_fkey")
+}
+
+model FeedbackComment {
+  id          BigInt    @id @default(autoincrement())
+  feedbackId  BigInt
+  authorId    BigInt
+  content     String
+  deleted     Boolean   @default(false)
+  deletedAt   DateTime?
+  deletedById BigInt?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  author      User      @relation("FeedbackCommentAuthor", fields: [authorId], references: [id])
+  deletedBy   User?     @relation("FeedbackCommentDeleter", fields: [deletedById], references: [id])
+  feedback    Feedback  @relation("Feedback_Comments", fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId, createdAt])
+  @@index([authorId, createdAt])
+  @@index([deleted])
+  @@index([deletedById], map: "FeedbackComment_deletedById_fkey")
+}
+
+model PledgeBossRaidMeta {
+  bossMetaId Int    @id @default(autoincrement())
+  raidLevel  Int
+  bossName   String
+  howManyKey Int
+  useYn      String @default("Y")
+}
+
+model Item {
+  itemId   Int    @id @default(autoincrement())
+  itemName String
+  level    Int
+
+  @@map("Item")
+}
+
+model PledgeRaidResult {
+  year       Int
+  month      Int
+  week       Int
+  clanId     Int
+  bossMetaId Int
+  isTreasury Boolean   @default(false)
+  createdBy  String?   @db.VarChar(64)
+  updatedBy  String?   @db.VarChar(64)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@id([year, month, week, clanId, bossMetaId])
+  @@map("PledgeRaidResult")
+}
+
+model PledgeRaidParticipant {
+  year       Int
+  month      Int
+  week       Int
+  clanId     Int
+  bossMetaId Int
+  userId     Int
+
+  @@id([year, month, week, clanId, bossMetaId, userId])
+  @@map("PledgeRaidParticipant")
+}
+
+model PledgeRaidDropItem {
+  id            BigInt @id @default(autoincrement()) @map("id")
+  year          Int
+  month         Int
+  week          Int
+  clanId        Int
+  bossMetaId    Int
+  isSold        Int
+  soldPrice     Int
+  isTreasury    Int    @default(0)
+  itemName      String
+  rootUserId    String
+  isDistributed Int    @default(0)
+
+  @@index([year, month, week, clanId, bossMetaId])
+  @@map("PledgeRaidDropItem")
 }
 
 enum RequestStatus {
@@ -22,273 +291,17 @@ enum UserRole {
 }
 
 enum FeedbackStatus {
-  WRITTEN // 작성완료(작성자가 등록만 한 상태)
-  CONFIRMED // 확인완료(슈퍼관리자가 열람)
-  IN_PROGRESS // 처리중(슈퍼관리자가 상태 변경)
-  DONE // 처리완료(슈퍼관리자가 상세에서 완료)
-  REJECTED // 반려(슈퍼관리자가 반려)
-}
-
-model ClanRequest {
-  id            BigInt @id @default(autoincrement())
-  world         String @db.VarChar(50)
-  serverNo      Int
-  clanName      String @db.VarChar(100)
-  loginId       String @db.VarChar(50)
-  passwordHash  String @db.VarChar(255)
-  depositorName String @db.VarChar(50)
-
-  status       RequestStatus @default(PENDING)
-  reviewerNote String?       @db.VarChar(255)
-  reviewedAt   DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([world, serverNo, clanName], name: "uq_world_server_clan")
-  @@unique([world, serverNo, loginId], name: "uq_world_server_login")
-  @@index([status, createdAt], name: "idx_status_created")
-}
-
-model Clan {
-  id       BigInt @id @default(autoincrement())
-  world    String @db.VarChar(50)
-  serverNo Int
-  name     String @db.VarChar(100)
-
-  members         User[]
-  timelines       BossTimeline[]
-  treasuryEntries TreasuryLedger[] @relation("ClanTreasuryEntries")
-
-  // ⬇️ BossCounter와의 관계 (이 이름을 BossCounter 쪽과 동일하게)
-  bossCounters BossCounter[] @relation("ClanBossCounters")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([world, serverNo, name], name: "uq_world_server_name")
-}
-
-model User {
-  id           BigInt   @id @default(autoincrement())
-  clanId       BigInt?
-  clan         Clan?    @relation(fields: [clanId], references: [id])
-  loginId      String   @unique @db.VarChar(50)
-  passwordHash String   @db.VarChar(255)
-  role         UserRole @default(USER)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // ⬇️ 아래 5개는 '역방향' 관계 필드 — DB 컬럼 늘어나지 않음
-  feedbackAuthored Feedback[]        @relation("FeedbackAuthor")
-  feedbackHandled  Feedback[]        @relation("FeedbackHandler")
-  feedbackDeleted  Feedback[]        @relation("FeedbackDeleter")
-  commentAuthored  FeedbackComment[] @relation("FeedbackCommentAuthor")
-  commentDeleted   FeedbackComment[] @relation("FeedbackCommentDeleter")
-
-  @@index([clanId], name: "idx_user_clan")
-}
-
-model BossMeta {
-  id         BigInt  @id @default(autoincrement())
-  name       String  @unique @db.VarChar(50)
-  respawn    Int
-  isRandom   Boolean @default(false)
-  location   String  @db.VarChar(255)
-  tpSave     String? @db.VarChar(50)
-  difficulty String? @db.VarChar(20)
-  notes      String? @db.VarChar(255)
-  orderNo    Int     @default(0)
-  active     Boolean @default(true)
-
-  isFixBoss String @default("N") @db.VarChar(1)
-
-  /// 0~1439 (자정=0, 23:59=1439) — "시간만" 저장
-  genTime Int? @map("genTime") @db.SmallInt
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([isFixBoss], map: "idx_bossmeta_isfixboss")
-}
-
-model BossTimeline {
-  id BigInt @id @default(autoincrement())
-
-  // Clan ↔ BossTimeline 양방향
-  clanId BigInt
-  clan   Clan   @relation(fields: [clanId], references: [id])
-
-  bossName  String
-  cutAt     DateTime
-  createdBy String
-
-  // ⛔️ String[] 불가 → ✅ Json으로 교체 (앱에서 []처럼 사용)
-  imageIds Json?
-
-  respawn Int? // 분 단위
-
-  // 멍(노젠) 누적 횟수
-  noGenCount Int @default(0)
-
-  // 반대편과 @relation 이름 일치
-  lootItems       LootItem[]         @relation("TimelineLootItems")
-  distributions   LootDistribution[] @relation("TimelineDistributions")
-  treasuryEntries TreasuryLedger[]   @relation("TimelineTreasuryEntries")
-
-  createdAt DateTime @default(now())
-
-  @@index([clanId], name: "idx_timeline_clan")
-}
-
-model LootItem {
-  id         BigInt       @id @default(autoincrement())
-  timelineId BigInt
-  timeline   BossTimeline @relation("TimelineLootItems", fields: [timelineId], references: [id])
-
-  itemName   String    @db.VarChar(100)
-  isSold     Boolean   @default(false)
-  soldAt     DateTime?
-  soldPrice  Int?
-  toTreasury Boolean   @default(false)
-
-  /// 루팅자 아이디
-  lootUserId String? @default("") @db.VarChar(100)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  createdBy String @db.VarChar(50)
-
-  distributions   LootDistribution[] @relation("ItemDistributions")
-  treasuryEntries TreasuryLedger[]   @relation("LootItemTreasuryEntries")
-
-  @@index([timelineId], name: "idx_lootitem_timeline")
-}
-
-model LootDistribution {
-  id BigInt @id @default(autoincrement())
-
-  timelineId BigInt
-  lootItemId BigInt?
-
-  timeline BossTimeline @relation("TimelineDistributions", fields: [timelineId], references: [id])
-  lootItem LootItem?    @relation("ItemDistributions", fields: [lootItemId], references: [id])
-
-  recipientLoginId String    @db.VarChar(50)
-  amount           Int?
-  isPaid           Boolean   @default(false)
-  paidAt           DateTime?
-
-  createdAt DateTime @default(now())
-  createdBy String   @db.VarChar(50)
-
-  @@index([timelineId], name: "idx_distribution_timeline")
-  @@index([lootItemId], name: "idx_distribution_lootitem")
+  WRITTEN
+  CONFIRMED
+  IN_PROGRESS
+  DONE
+  REJECTED
 }
 
 enum TreasuryEntryType {
-  SALE_TREASURY // 보스 드랍 아이템 판매금 유입
-  MANUAL_IN // 수동 입금
-  MANUAL_OUT // 수동 출금(지출)
-}
-
-model TreasuryLedger {
-  id BigInt @id @default(autoincrement())
-
-  clanId BigInt
-  clan   Clan   @relation("ClanTreasuryEntries", fields: [clanId], references: [id])
-
-  timelineId BigInt?
-  timeline   BossTimeline? @relation("TimelineTreasuryEntries", fields: [timelineId], references: [id])
-
-  lootItemId BigInt?
-  lootItem   LootItem? @relation("LootItemTreasuryEntries", fields: [lootItemId], references: [id])
-
-  entryType TreasuryEntryType
-  amount    Int
-  note      String?           @db.VarChar(255)
-
-  // 이 시점 누적 잔액(스냅샷)
-  balance Int
-
-  createdBy String   @db.VarChar(50)
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([clanId, createdAt], name: "idx_treasury_clan_created")
-  @@map("treasury_ledger")
-}
-
-model BossCounter {
-  id BigInt @id @default(autoincrement())
-
-  clanId BigInt
-  clan   Clan   @relation("ClanBossCounters", fields: [clanId], references: [id])
-
-  bossName  String @db.VarChar(50)
-  dazeCount Int    @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([clanId, bossName], name: "uq_bossCounterClanBoss")
-  @@index([clanId], name: "idx_bossCounterClan")
-}
-
-model Feedback {
-  id      BigInt         @id @default(autoincrement())
-  title   String         @db.VarChar(200)
-  content String
-  status  FeedbackStatus @default(WRITTEN)
-
-  // 작성자
-  authorId BigInt
-  author   User   @relation("FeedbackAuthor", fields: [authorId], references: [id])
-
-  // 처리 담당자
-  handledById BigInt?
-  handledBy   User?   @relation("FeedbackHandler", fields: [handledById], references: [id])
-
-  // 소프트 삭제
-  deleted     Boolean   @default(false)
-  deletedAt   DateTime?
-  deletedById BigInt?
-  deletedBy   User?     @relation("FeedbackDeleter", fields: [deletedById], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // 🔴 여기만 남기고, 같은 모델을 가리키는 다른 배열 필드(FeedbackComment FeedbackComment[])는 삭제
-  comments FeedbackComment[] @relation("Feedback_Comments")
-
-  @@index([createdAt])
-  @@index([authorId, createdAt])
-  @@index([status, createdAt])
-  @@index([deleted, createdAt])
-  @@index([title])
-}
-
-model FeedbackComment {
-  id BigInt @id @default(autoincrement())
-
-  feedbackId BigInt
-  feedback   Feedback @relation("Feedback_Comments", fields: [feedbackId], references: [id], onDelete: Cascade)
-
-  authorId BigInt
-  author   User   @relation("FeedbackCommentAuthor", fields: [authorId], references: [id])
-
-  content String
-
-  deleted     Boolean   @default(false)
-  deletedAt   DateTime?
-  deletedById BigInt?
-  deletedBy   User?     @relation("FeedbackCommentDeleter", fields: [deletedById], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([feedbackId, createdAt])
-  @@index([authorId, createdAt])
-  @@index([deleted])
+  SALE_TREASURY
+  MANUAL_IN
+  MANUAL_OUT
+  PLEDGE_RAID
+  PLEDGE_RAID_CANCEL
 }

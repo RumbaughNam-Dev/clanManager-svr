@@ -2,11 +2,12 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ListTreasuryQueryDto, ListTreasuryResp } from './dto/list-treasury.dto';
-import { TreasuryEntryType } from '@prisma/client';
 
 @Injectable()
 export class TreasuryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+  ) {}
 
   private toBigInt(v: any) {
     try {
@@ -50,9 +51,11 @@ export class TreasuryService {
     // 기본: 전체. (선택) IN/OUT 단순 필터
     const where: any = { clanId };
     if (q.type === 'IN') {
-      where.entryType = { in: [TreasuryEntryType.SALE_TREASURY, TreasuryEntryType.MANUAL_IN] };
+      // 유입: 판매 혈비귀속 + 수동 유입
+      where.entryType = { in: ['SALE_TREASURY', 'MANUAL_IN', 'PLEDGE_RAID'] };
     } else if (q.type === 'OUT') {
-      where.entryType = TreasuryEntryType.MANUAL_OUT;
+      // 유출: 수동 출금
+      where.entryType = 'MANUAL_OUT';
     }
 
     const [rows, total] = await this.prisma.$transaction([
@@ -72,8 +75,8 @@ export class TreasuryService {
     const balance = await this.getLastBalance(clanId);
 
     const items = rows.map((r) => {
-      const type: 'IN' | 'OUT' =
-        r.entryType === TreasuryEntryType.MANUAL_OUT ? 'OUT' : 'IN';
+      const type: 'IN' | 'OUT' = r.amount < 0 ? 'OUT' : (r.entryType === 'MANUAL_OUT' ? 'OUT' : 'IN');
+      
       return {
         id: String(r.id),
         at: r.createdAt.toString(),
@@ -81,9 +84,11 @@ export class TreasuryService {
         entryType: r.entryType,
         // 프론트에서 SALE_TREASURY를 고정 라벨로 바꿔 그리므로 여기선 원문 유지
         source:
-          r.entryType === TreasuryEntryType.SALE_TREASURY
-            ? `보스판매 (${r.timelineId ?? '-'} / ${r.lootItemId ?? '-'})`
-            : (r.note ?? (type === 'IN' ? '기타 유입' : '기타 지출')),
+          r.note ?? (
+            r.entryType === 'SALE_TREASURY'
+              ? `보스판매 (${r.timelineId ?? '-'} / ${r.lootItemId ?? '-'})`
+              : (type === 'IN' ? '기타 유입' : '기타 지출')
+          ),
         amount: r.amount,
         by: r.createdBy,
         bossName: r.timeline?.bossName ?? null,
@@ -105,7 +110,7 @@ export class TreasuryService {
     const created = await this.prisma.treasuryLedger.create({
       data: {
         clanId,
-        entryType: TreasuryEntryType.MANUAL_IN,
+        entryType: 'MANUAL_IN',
         amount: amt,
         note: input.note ?? null,             // ✅ 출처/메모 저장
         balance: newBalance,                  // ✅ 스냅샷
@@ -133,7 +138,7 @@ export class TreasuryService {
     const created = await this.prisma.treasuryLedger.create({
       data: {
         clanId,
-        entryType: TreasuryEntryType.MANUAL_OUT,
+        entryType: 'MANUAL_OUT',
         amount: amt,
         note: input.note ?? null,             // ✅ 용도/메모 저장
         balance: newBalance,                  // ✅ 스냅샷
@@ -144,5 +149,55 @@ export class TreasuryService {
     });
 
     return created;
+  }
+
+  /**
+   * 혈맹 레이드(혈비 귀속) 아이템이 판매되었을 때 혈비 테이블에 기록
+   * → 같은 금액/메모/작성자가 짧은 시간(5초) 안에 두 번 들어오면 한 번만 기록
+   */
+  async recordPledgeRaidSale(input: {
+    clanId;
+    actor: string;
+    amount: number;
+    note: string;
+    timelineId: bigint | null;
+    lootItemId: bigint | null;
+	  entryType?: "PLEDGE_RAID" | "PLEDGE_RAID_CANCEL";
+  }) {
+      const raw = Number(input.amount);
+      const clanId = this.toBigInt(input.clanId);
+      if (!Number.isFinite(raw) || raw === 0) throw new BadRequestException("금액은 0이 될 수 없습니다.");
+
+      const actor = input.actor || "system";
+      const note = input.note ?? null;
+
+      const lastBalance = await this.getLastBalance(clanId);
+
+      let entryType: "MANUAL_IN" | "MANUAL_OUT";
+      let amountAbs: number;
+      let newBalance: number;
+
+      if (raw > 0) {
+        entryType = "MANUAL_IN";
+        amountAbs = raw;
+        newBalance = lastBalance + amountAbs;
+      } else {
+        entryType = "MANUAL_OUT";
+        amountAbs = Math.abs(raw);
+        newBalance = lastBalance - amountAbs;
+      }
+
+      return await this.prisma.treasuryLedger.create({
+        data: {
+          clanId,
+          timelineId: input.timelineId ?? null,
+          lootItemId: input.lootItemId ?? null,
+          entryType,
+          amount: amountAbs,
+          note,
+          balance: newBalance,
+          createdBy: actor,
+        },
+      });
   }
 }

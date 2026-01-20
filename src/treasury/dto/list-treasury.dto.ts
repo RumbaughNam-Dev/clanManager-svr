@@ -34,13 +34,12 @@ export type ListTreasuryResp = {
   balance: number;
   items: Array<{
     id: string;
-    at: string;             // ISO
-    type: 'IN' | 'OUT';     // 화면 표시용
-    entryType: 'SALE_TREASURY' | 'MANUAL_IN' | 'MANUAL_OUT';
-    source: string;         // 출처/용도 (note 대체)
-    amount: number;         // 양수
-    by: string;             // 작성자
-    // (선택) 연계 정보
+    at: string;
+    type: 'IN' | 'OUT';
+    entryType: 'SALE_TREASURY' | 'MANUAL_IN' | 'MANUAL_OUT' | 'PLEDGE_RAID' | 'PLEDGE_RAID_CANCEL';
+    source: string;
+    amount: number;
+    by: string;
     bossName?: string | null;
     itemName?: string | null;
   }>;

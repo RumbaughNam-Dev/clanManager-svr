@@ -98,15 +98,31 @@ export class FeedbackService {
       }),
     ]);
 
-    // 목록 응답 최소 필드로 맵핑
-    const items = rows.map((r) => ({
-      id: String(r.id),
-      title: r.deleted ? '삭제된 게시글입니다.' : r.title,
-      authorLoginId: r.author?.loginId ?? '-',
-      status: r.status as FeedbackStatus,
-      createdAt: r.createdAt.toISOString(),
-      deleted: r.deleted,
-    }));
+    const items = rows.map((r) => {
+  const loginId = r.author?.loginId ?? null;
+  const clan = (r.author as any)?.clan ?? null;
+  const server = clan?.server ?? null;
+
+  // [서버-서버번호-혈맹명] 부분 조합
+  let prefix = '';
+  if (clan && server) {
+    const serverName = server.name ?? '';
+    const serverNo = server.number ?? '';
+    const clanName = clan.name ?? '';
+    // 예: [켄라우헬-01-어느혈맹]
+    prefix = `[${serverName}-${serverNo}-${clanName}] `;
+  }
+
+  return {
+    id: String(r.id),
+    title: r.deleted ? '삭제된 게시글입니다.' : r.title,
+    // 🔥 화면에서 바로 쓸 수 있게 완성된 문자열로 내려줌
+    authorLoginId: loginId ? `${prefix}${loginId}` : '-',
+    status: r.status as FeedbackStatus,
+    createdAt: r.createdAt.toISOString(),
+    deleted: r.deleted,
+  };
+});
 
     return { ok: true, total, items, page, size: take };
   }
