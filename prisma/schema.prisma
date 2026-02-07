@@ -259,6 +259,21 @@ model PledgeRaidParticipant {
   @@map("PledgeRaidParticipant")
 }
 
+model PledgeRaidDistributeStatus {
+  year       Int
+  month      Int
+  week       Int
+  clanId     Int
+  bossMetaId Int
+  userId     Int
+  dropItemId BigInt
+  distAmount BigInt?
+  distYn     String? @db.Char(1)
+
+  @@id([year, month, week, clanId, bossMetaId, userId, dropItemId])
+  @@map("PledgeRaidDistributeStatus")
+}
+
 model PledgeRaidDropItem {
   id            BigInt @id @default(autoincrement()) @map("id")
   year          Int

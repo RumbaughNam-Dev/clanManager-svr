@@ -1,5 +1,5 @@
 // src/pledge-raid/dto/query-raid-items.dto.ts
-import { IsInt } from 'class-validator';
+import { IsInt, IsOptional } from 'class-validator';
 
 export class QueryRaidItemsDto {
   @IsInt()
@@ -16,4 +16,8 @@ export class QueryRaidItemsDto {
 
   @IsInt()
   bossMetaId!: number;
+
+  @IsOptional()
+  @IsInt()
+  itemId?: number;
 }

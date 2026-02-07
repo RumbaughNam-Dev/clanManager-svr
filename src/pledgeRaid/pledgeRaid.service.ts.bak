@@ -274,32 +274,6 @@ export class PledgeRaidService {
       select: { isTreasury: true },
     });
 
-    const participantCount = await this.prisma.pledgeRaidParticipant.count({
-      where: { year, month, week, clanId, bossMetaId },
-    });
-
-    const distCountsByItemId = new Map<string, number>();
-    if (participantCount > 0) {
-      const distRows = await this.prisma.pledgeRaidDistributeStatus.findMany({
-        where: {
-          year,
-          month,
-          week,
-          clanId,
-          bossMetaId,
-          distYn: 'Y',
-        },
-        select: {
-          dropItemId: true,
-        },
-      });
-
-      for (const row of distRows) {
-        const key = String(row.dropItemId);
-        distCountsByItemId.set(key, (distCountsByItemId.get(key) ?? 0) + 1);
-      }
-    }
-
     const rows = await this.prisma.pledgeRaidDropItem.findMany({
       where: { year, month, week, clanId, bossMetaId },
       orderBy: { itemName: 'asc' },
@@ -311,9 +285,7 @@ export class PledgeRaidService {
       rootUserId: r.rootUserId,
       isSold: r.isSold === 1,
       soldPrice: r.soldPrice ?? 0,
-      isDistributed:
-        participantCount > 0 &&
-        (distCountsByItemId.get(String(r.id)) ?? 0) >= participantCount,
+      isDistributed: r.isDistributed === 1, // 있으면
     }));
 
     return { ok: true, isTreasury: result?.isTreasury ?? false, items };
@@ -569,9 +541,8 @@ export class PledgeRaidService {
     week: number;
     clanId: number;
     bossMetaId: number;
-    itemId?: number;
   }) {
-    const { year, month, week, clanId, bossMetaId, itemId } = params;
+    const { year, month, week, clanId, bossMetaId } = params;
 
     // 1) 해당 주차/보스의 참여자 조회
     const participants = await this.prisma.pledgeRaidParticipant.findMany({
@@ -610,60 +581,18 @@ export class PledgeRaidService {
       },
     });
 
-    // 3) 아이템 분배 정보 조회 (itemId가 있는 경우만)
-    let distributionByUserId: Map<number, { distAmount: bigint | null; distYn: string | null }> =
-      new Map();
-
-    if (itemId != null) {
-      const distRows = await this.prisma.pledgeRaidDistributeStatus.findMany({
-        where: {
-          year,
-          month,
-          week,
-          clanId,
-          bossMetaId,
-          dropItemId: BigInt(itemId),
-        },
-        select: {
-          userId: true,
-          distAmount: true,
-          distYn: true,
-        },
-      });
-
-      for (const row of distRows) {
-        distributionByUserId.set(row.userId, {
-          distAmount: row.distAmount ?? null,
-          distYn: row.distYn ?? null,
-        });
-      }
-    }
-
-    // 4) 응답 형식으로 변환
-    const result = users.map((user) => {
-      const base = {
-        userId: Number(user.id),
-        loginId: user.loginId,
-        nickname: null,
-        role:
-          user.role === 'LEADER'
-            ? 'LEADER'
-            : user.role === 'ADMIN'
-              ? 'ADMIN'
-              : 'MEMBER',
-      };
-
-      if (itemId == null) {
-        return base;
-      }
-
-      const dist = distributionByUserId.get(Number(user.id));
-      return {
-        ...base,
-        distAmount: dist?.distAmount != null ? Number(dist.distAmount) : null,
-        distYn: dist?.distYn === 'Y' ? 'Y' : 'N',
-      };
-    });
+    // 3) 응답 형식으로 변환
+    const result = users.map((user) => ({
+      userId: Number(user.id),
+      loginId: user.loginId,
+      nickname: null,
+      role:
+        user.role === 'LEADER'
+          ? 'LEADER'
+          : user.role === 'ADMIN'
+            ? 'ADMIN'
+            : 'MEMBER',
+    }));
 
     return { participants: result };
   }
@@ -715,7 +644,7 @@ export class PledgeRaidService {
   /**
    * 분배 완료 처리
    * 특정 아이템(itemId)을 특정 사용자(userId)에게 분배금액(distributionAmount)만큼 처리
-   * PledgeRaidDistributeStatus 테이블에 분배 정보를 기록
+   * 해당 아이템을 분배완료(isDistributed = 1)로 마킹
    */
   async completeDistribution(params: {
     year: number;
@@ -729,43 +658,25 @@ export class PledgeRaidService {
   }) {
     const { year, month, week, clanId, bossMetaId, itemId, userId, distributionAmount } = params;
 
-    // PledgeRaidDistributeStatus에 분배 정보 저장
-    const result = await this.prisma.pledgeRaidDistributeStatus.upsert({
+    // 1) 해당 드랍 아이템을 찾아서 분배완료 처리
+    const updatedItem = await this.prisma.pledgeRaidDropItem.update({
       where: {
-        year_month_week_clanId_bossMetaId_userId_dropItemId: {
-          year,
-          month,
-          week,
-          clanId,
-          bossMetaId,
-          userId,
-          dropItemId: BigInt(itemId),
-        },
+        id: BigInt(itemId),
       },
-      create: {
-        year,
-        month,
-        week,
-        clanId,
-        bossMetaId,
-        userId,
-        dropItemId: BigInt(itemId),
-        distAmount: BigInt(distributionAmount),
-        distYn: 'Y',
-      },
-      update: {
-        distAmount: BigInt(distributionAmount),
-        distYn: 'Y',
+      data: {
+        isDistributed: 1,
       },
     });
 
+    // 2) 분배 정보 로깅 (선택사항 - 감사 목적)
+    // userId와 distributionAmount 정보는 감사 목적으로 사용 가능
     console.log(
-      `[completeDistribution] Item ${itemId} distribution completed for user ${userId}: ${distributionAmount}`,
+      `Item ${itemId} distributed to user ${userId}: ${distributionAmount}`,
     );
 
     return {
       ok: true,
-      message: '분배가 완료되었습니다',
+      message: '분배 완료 처리되었습니다',
       itemId,
       userId,
       distributionAmount,
@@ -774,8 +685,7 @@ export class PledgeRaidService {
 
   /**
    * 참여자 분배 정보 업데이트 (사용자별 분배 완료)
-   * PledgeRaidDistributeStatus 테이블의 모든 아이템에 대해 분배 정보 업데이트
-   * 모든 분배가 완료되면 해당 보스의 아이템들도 isDistributed = 1로 설정
+   * PledgeRaidParticipant 테이블에 분배금액을 저장하고 분배 상태를 "Y"로 마킹
    */
   async updateParticipantDistribution(params: {
     year: number;
@@ -788,74 +698,23 @@ export class PledgeRaidService {
   }) {
     const { year, month, week, clanId, bossMetaId, userId, distributionAmount } = params;
 
-    // 해당 사용자가 이 레이드에서 받은 모든 아이템에 대해 분배 정보 업데이트
-    const distributionRecords = await this.prisma.pledgeRaidDistributeStatus.findMany({
+    // PledgeRaidParticipant 테이블에서 해당 참여자를 찾아 분배 정보 업데이트
+    const result = await this.prisma.pledgeRaidParticipant.update({
       where: {
-        year,
-        month,
-        week,
-        clanId,
-        bossMetaId,
-        userId,
-      },
-    });
-
-    // 모든 분배 레코드 업데이트
-    for (const record of distributionRecords) {
-      await this.prisma.pledgeRaidDistributeStatus.update({
-        where: {
-          year_month_week_clanId_bossMetaId_userId_dropItemId: {
-            year,
-            month,
-            week,
-            clanId,
-            bossMetaId,
-            userId,
-            dropItemId: record.dropItemId,
-          },
-        },
-        data: {
-          distAmount: BigInt(distributionAmount),
-          distYn: 'Y',
-        },
-      });
-    }
-
-    // 현재 보스에 대해 모든 분배가 완료했는지 확인
-    const allDistributeRecords = await this.prisma.pledgeRaidDistributeStatus.findMany({
-      where: {
-        year,
-        month,
-        week,
-        clanId,
-        bossMetaId,
-      },
-    });
-
-    const allDistributed = allDistributeRecords.every(r => r.distYn === 'Y');
-    const totalRecords = allDistributeRecords.length;
-    console.log(`[updateParticipantDistribution] Boss ${bossMetaId}: ${totalRecords} distribution records, all completed: ${allDistributed}`);
-
-    // 모든 분배가 완료되었다면 해당 보스의 판매된 아이템들을 isDistributed = 1로 설정
-    if (allDistributed && totalRecords > 0) {
-      console.log(`[updateParticipantDistribution] Marking items as distributed for boss ${bossMetaId}`);
-
-      const updatedItems = await this.prisma.pledgeRaidDropItem.updateMany({
-        where: {
+        year_month_week_clanId_bossMetaId_userId: {
           year,
           month,
           week,
           clanId,
           bossMetaId,
-          isSold: 1,
+          userId,
         },
-        data: {
-          isDistributed: 1,
-        },
-      });
-
-      console.log(`[updateParticipantDistribution] Updated ${updatedItems.count} items as distributed`);
-    }
+      },
+      data: {
+        distributionAmount: Number(distributionAmount),
+        isDistributed: 'Y', // 분배 완료 상태로 마킹
+      },
+    });
 
     return {
       ok: true,
