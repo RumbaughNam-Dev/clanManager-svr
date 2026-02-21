@@ -136,24 +136,6 @@ function parseYmd(ymd?: string): Date | null {
   return Number.isFinite(dt.getTime()) ? dt : null;
 }
 
-/** 포함형 일수 차 (from~to 둘 다 포함) */
-function daysBetweenInclusive(a: string, b: string): number {
-  const da = parseYmd(a); const db = parseYmd(b);
-  if (!da || !db) return Infinity;
-  const s = Math.min(da.getTime(), db.getTime());
-  const e = Math.max(da.getTime(), db.getTime());
-  return Math.floor((e - s) / 86400000) + 1;
-}
-
-/** 31일 범위 검증 (둘 다 주어졌을 때만) */
-function assertRangeWithin31(from?: string, to?: string) {
-  if (from && to) {
-    if (daysBetweenInclusive(from, to) > 31) {
-      throw new BadRequestException('검색 기간은 최대 31일까지만 가능합니다.');
-    }
-  }
-}
-
 /** 권한 체크 헬퍼 */
 function isSuperAdmin(role: string) {
   return role === 'SUPERADMIN';
@@ -168,16 +150,13 @@ export class FeedbackController {
   /**
    * 목록 검색
    * - title / myOnly / authorLoginId
-   * - fromDate ~ toDate (YYYY-MM-DD) — 31일 제한
+   * - fromDate ~ toDate (YYYY-MM-DD)
    * - 페이지네이션 (page, size)
    */
   @UseGuards(AuthGuard('jwt'))
   @Post('/search')
   async search(@Body() dto: SearchFeedbackDto, @Req() req: express.Request) {
     const { userId, role, loginId } = getUser(req);
-
-    // 31일 범위 제한
-    assertRangeWithin31(dto.fromDate, dto.toDate);
 
     // myOnly가 true면 authorLoginId는 무시하고 자신의 글만
     const effectiveAuthorLoginId =

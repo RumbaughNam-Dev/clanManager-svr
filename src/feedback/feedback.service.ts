@@ -24,13 +24,6 @@ function parseYmd(ymd?: string): Date | null {
   const dt = new Date(y, mo, d, 0, 0, 0, 0);
   return Number.isFinite(dt.getTime()) ? dt : null;
 }
-function daysBetweenInclusive(a?: string, b?: string) {
-  const da = parseYmd(a); const db = parseYmd(b);
-  if (!da || !db) return Infinity;
-  const s = Math.min(da.getTime(), db.getTime());
-  const e = Math.max(db.getTime(), da.getTime());
-  return Math.floor((e - s) / 86400000) + 1;
-}
 
 @Injectable()
 export class FeedbackService {
@@ -49,11 +42,6 @@ export class FeedbackService {
     viewer: Viewer;
   }) {
     const { title, authorLoginId, fromDate, toDate, page, size } = args;
-
-    // 31일 방어 (이중 체크)
-    if (fromDate && toDate && daysBetweenInclusive(fromDate, toDate) > 31) {
-      throw new BadRequestException('검색 기간은 최대 31일까지만 가능합니다.');
-    }
 
     const where: any = {
       // 기본: 소프트 삭제 제외
