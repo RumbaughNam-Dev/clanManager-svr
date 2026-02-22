@@ -122,11 +122,17 @@ export class DashboardController {
     return { ok: true, fileName: file.filename };
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('bosses/:id/daze')
-  async incDaze(@Param('id') id: string, @Req() req: any) {
+  async incDaze(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() body: { clanId?: string | number; atIso?: string },
+  ) {
     // JWT에서 clanId 꺼내는 방식은 프로젝트 컨벤션대로
-    const clanId = req.user?.clanId;
-    return this.svc.incDazeByBossMeta(clanId, id);
+    const clanId = req.user?.clanId ?? body?.clanId;
+    const actorLoginId = req.user?.loginId ?? 'system';
+    return this.svc.incDazeByBossMeta(clanId, id, actorLoginId);
   }
 
   @UseGuards(JwtAuthGuard)

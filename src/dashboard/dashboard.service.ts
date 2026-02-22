@@ -455,7 +455,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
   }  
   
   /** 멍 +1 (보스 메타 ID 기준, 클랜별) */
-  async incDazeByBossMeta(clanIdRaw: any, bossMetaIdRaw: string) {
+  async incDazeByBossMeta(clanIdRaw: any, bossMetaIdRaw: string, actorLoginId = 'system') {
     const clanId = this.toBigInt(clanIdRaw, '혈맹 정보가 필요합니다.');
     const bossMetaId = this.toBigInt(bossMetaIdRaw, '보스 ID가 올바르지 않습니다.');
 
@@ -473,18 +473,52 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       where: { clanId, bossName: meta.name },
       select: { dazeCount: true },
     });
-    return { ok: true, dazeCount: row?.dazeCount ?? 0 };
+
+    const now = new Date();
+    const timeline = await this.prisma.bossTimeline.create({
+      data: {
+        clanId,
+        bossName: meta.name,
+        cutAt: now,
+        createdBy: actorLoginId,
+        noGenCount: row?.dazeCount ?? 0,
+      },
+      select: { id: true, cutAt: true },
+    });
+
+    return {
+      ok: true,
+      dazeCount: row?.dazeCount ?? 0,
+      timelineId: String(timeline.id),
+      lastAt: timeline.cutAt.toISOString(),
+    };
   }
 
   /** BossCounter 원자적 UPSERT (INSERT ... ON DUPLICATE KEY UPDATE) */
   private async upsertBossCounterRaw(clanId: bigint, bossName: string, delta: number) {
     // ⚠️ 전제: @@unique([clanId, bossName]) 존재
-    const res: number = await this.prisma.$executeRaw`
-      INSERT INTO \`BossCounter\` (\`clanId\`, \`bossName\`, \`dazeCount\`)
-      VALUES (${clanId}, ${bossName}, ${Math.max(1, delta)})
-      ON DUPLICATE KEY UPDATE \`dazeCount\` = \`dazeCount\` + ${delta}
-    `;
-    return res; // 영향받은 행 수
+    const updated = await this.prisma.bossCounter.updateMany({
+      where: { clanId, bossName },
+      data: { dazeCount: { increment: delta } },
+    });
+    if (updated.count > 0) return updated.count;
+
+    try {
+      await this.prisma.bossCounter.create({
+        data: {
+          clanId,
+          bossName,
+          dazeCount: Math.max(1, delta),
+        },
+      });
+      return 1;
+    } catch {
+      const retry = await this.prisma.bossCounter.updateMany({
+        where: { clanId, bossName },
+        data: { dazeCount: { increment: delta } },
+      });
+      return retry.count;
+    }
   }
 
 async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
