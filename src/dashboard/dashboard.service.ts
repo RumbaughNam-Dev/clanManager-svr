@@ -523,23 +523,78 @@ async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
     return d;
   };
 
+  const parseKoreanTimeLine = (line: string) => {
+    const m = /^(오전|오후)?\s*(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+?)\s*$/.exec(line);
+    if (!m) return null;
+    const ampm = m[1] ?? "";
+    const hms = m[2];
+    const rest = m[3];
+
+    const parts = hms.split(":").map(Number);
+    let [hh, mm, ss = 0] = parts;
+    if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null;
+
+    if (ampm === "오후" && hh < 12) hh += 12;
+    if (ampm === "오전" && hh === 12) hh = 0;
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const hms24 = `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+
+    return { hms24, rest };
+  };
+
+  const stripRelativeSuffix = (s: string) => {
+    let out = String(s ?? "").trim();
+    // 예: "하루 전", "20시간 전/후", "59분 후", "한 시간 후"
+    out = out.replace(/\s*(하루\s*전)\s*$/g, "");
+    out = out.replace(/\s*(한\s*시간\s*후)\s*$/g, "");
+    out = out.replace(/\s*\d+\s*시간\s*(전|후)\s*$/g, "");
+    out = out.replace(/\s*\d+\s*분\s*(전|후)\s*$/g, "");
+    return out.trim();
+  };
+
   const normalizeBossName = (raw: string) => {
     // 공백 정리
     let name = String(raw ?? "").replace(/\s+/g, " ").trim();
     if (!name) return { name, hadMeng: false };
+
+    // "보스 고정 (월화수목금)" 형태의 꼬리 괄호 제거 (공백 있는 괄호만)
+    if (name.includes("보스 고정")) {
+      name = name.replace(/\s+\([^)]*\)\s*$/g, "").trim();
+    }
 
     // 단어 끝/중복 "멍" 토큰 제거 (예: "질풍 멍 멍" → "질풍")
     const tokens = name.split(" ").filter(Boolean);
     const stripped = tokens.filter(t => t !== "멍");
     const hadMeng = stripped.length !== tokens.length;
 
-    // 혹시 앞뒤에 특수 괄호류가 붙어있으면 제거
-    name = stripped.join(" ").replace(/[()\[\]{}]+/g, "").trim();
+    name = stripped.join(" ").trim();
+
+    // 별칭 → BossMeta name 정규화
+    const aliasMap: Record<string, string> = {
+      "스피": "스피리드",
+      "질풍": "질풍의 샤스키 (녹샤)",
+      "광풍": "광풍의 샤스키 (빨샤)",
+      "이프": "이프리트",
+      "아르": "아르피어",
+      "대흑": "대흑장로",
+      "가스트로드": "가스트",
+      "베리스": "베리스(암대)",
+      "고룡 보스 고정": "고룡 3종세트",
+      "어수4층 보스 고정": "어수4층 보스 (2)",
+      "기란감옥1층 보스 고정": "폭주한 클라인 (기감1)",
+    };
+    name = aliasMap[name] ?? name;
     return { name, hadMeng };
   };
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
+    let line = rawLine.trim();
+
+    const parsed = parseKoreanTimeLine(line);
+    if (parsed) {
+      line = `${parsed.hms24} ${stripRelativeSuffix(parsed.rest)}`;
+    }
     let hms: string | null = null;
     let bossNameRaw: string | null = null;
     let missedCount: number | null = null;
