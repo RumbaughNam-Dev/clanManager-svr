@@ -484,8 +484,18 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
     });
     if (!meta) throw new NotFoundException('보스 메타를 찾을 수 없습니다.');
 
-    const at = opts?.atIso ? new Date(opts.atIso) : new Date();
-    if (isNaN(at.getTime())) throw new BadRequestException('atIso 형식이 올바르지 않습니다.');
+    const now = new Date();
+    const atIso = opts?.atIso ? new Date(opts.atIso) : null;
+    if (atIso && isNaN(atIso.getTime())) throw new BadRequestException('atIso 형식이 올바르지 않습니다.');
+
+    const latest = await this.prisma.bossTimeline.findFirst({
+      where: { clanId, bossName: meta.name },
+      orderBy: { cutAt: 'desc' },
+      select: { cutAt: true },
+    });
+
+    // 멍 처리 시점: 최신 컷 시간, 없으면 현재(또는 제공된 atIso)
+    const at = latest?.cutAt ?? atIso ?? now;
 
     if (!opts?.force) {
       const respawnMin = Number(meta.respawn);
