@@ -314,6 +314,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
     bossMetaId: string,
     body: {
       cutAtIso: string;
+      force?: boolean;
       looterLoginId?: string | null;
       items?: string[];
       itemsEx?: Array<{ name: string; lootUserId?: string | null }>;
@@ -336,18 +337,31 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
     // 보스 메타 조회
     let meta = await this.prisma.bossMeta.findUnique({
       where: { id: BigInt(bossMetaId) },
-      select: { name: true },
+      select: { name: true, respawn: true },
     });
     if (!meta && body.bossName) {
       meta = await this.prisma.bossMeta.findUnique({
         where: { name: body.bossName },
-        select: { name: true },
+        select: { name: true, respawn: true },
       });
     }
     if (!meta) throw new BadRequestException('보스 메타를 찾을 수 없습니다.');
 
     // ✅ bossName 항상 보장
     const bossName = body.bossName ?? meta.name;
+
+    if (!body.force) {
+      const respawnMin = Number(meta.respawn);
+      const recent = await this.findRecentTimeline(clanId, bossName, cutAt, respawnMin);
+      if (recent) {
+        return {
+          ok: true,
+          needsConfirm: true,
+          by: recent.createdBy,
+          action: recent.noGenCount > 0 ? '멍' : '컷',
+        };
+      }
+    }
 
     const actor = body.actorLoginId ?? actorLoginIdFromArg ?? 'system';
     const participants = (body.participants ?? []).map(s => s.trim()).filter(Boolean);
@@ -435,7 +449,7 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
     // 컷 시 멍 카운터 0으로 리셋
     await this.resetBossCounter(clanId, bossName);
 
-    return { ok: true, id: String(created.id) };
+    return { ok: true, saved: true, id: String(created.id), timelineId: String(created.id) };
   }
 
   private async resetBossCounter(clanId: bigint, bossName: string) {
@@ -455,15 +469,36 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
   }  
   
   /** 멍 +1 (보스 메타 ID 기준, 클랜별) */
-  async incDazeByBossMeta(clanIdRaw: any, bossMetaIdRaw: string, actorLoginId = 'system') {
+  async incDazeByBossMeta(
+    clanIdRaw: any,
+    bossMetaIdRaw: string,
+    actorLoginId = 'system',
+    opts?: { atIso?: string; force?: boolean },
+  ) {
     const clanId = this.toBigInt(clanIdRaw, '혈맹 정보가 필요합니다.');
     const bossMetaId = this.toBigInt(bossMetaIdRaw, '보스 ID가 올바르지 않습니다.');
 
     const meta = await this.prisma.bossMeta.findUnique({
       where: { id: bossMetaId },
-      select: { name: true },
+      select: { name: true, respawn: true },
     });
     if (!meta) throw new NotFoundException('보스 메타를 찾을 수 없습니다.');
+
+    const at = opts?.atIso ? new Date(opts.atIso) : new Date();
+    if (isNaN(at.getTime())) throw new BadRequestException('atIso 형식이 올바르지 않습니다.');
+
+    if (!opts?.force) {
+      const respawnMin = Number(meta.respawn);
+      const recent = await this.findRecentTimeline(clanId, meta.name, at, respawnMin);
+      if (recent) {
+        return {
+          ok: true,
+          needsConfirm: true,
+          by: recent.createdBy,
+          action: recent.noGenCount > 0 ? '멍' : '컷',
+        };
+      }
+    }
 
     // 원자적 UPSERT (+1)
     const changed = await this.upsertBossCounterRaw(clanId, meta.name, 1);
@@ -474,12 +509,11 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       select: { dazeCount: true },
     });
 
-    const now = new Date();
     const timeline = await this.prisma.bossTimeline.create({
       data: {
         clanId,
         bossName: meta.name,
-        cutAt: now,
+        cutAt: at,
         createdBy: actorLoginId,
         noGenCount: row?.dazeCount ?? 0,
       },
@@ -492,6 +526,30 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       timelineId: String(timeline.id),
       lastAt: timeline.cutAt.toISOString(),
     };
+  }
+
+  private async findRecentTimeline(
+    clanId: bigint,
+    bossName: string,
+    at: Date,
+    respawnMin: number,
+  ) {
+    const minutes = Number(respawnMin);
+    if (!Number.isFinite(minutes) || minutes <= 0) return null;
+    const windowMs = (minutes / 2) * 60 * 1000;
+    const from = new Date(at.getTime() - windowMs);
+    return this.prisma.bossTimeline.findFirst({
+      where: {
+        clanId,
+        bossName,
+        cutAt: {
+          gte: from,
+          lte: at,
+        },
+      },
+      orderBy: { cutAt: 'desc' },
+      select: { id: true, createdBy: true, noGenCount: true, cutAt: true },
+    });
   }
 
   /** BossCounter 원자적 UPSERT (INSERT ... ON DUPLICATE KEY UPDATE) */

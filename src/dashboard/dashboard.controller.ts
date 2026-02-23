@@ -49,6 +49,7 @@ export class DashboardController {
     @Body()
     body: {
       cutAtIso?: string;                       // 프론트에서 안 보내면 서버시간으로 대체
+      force?: boolean;
       looterLoginId?: string | null;           // 레거시 공통 루팅자(옵션)
       items?: string[];                        // 레거시: 아이템 이름 배열
       lootUsers?: Array<string | null>;        // 레거시: 인덱스 매칭 루팅자 배열 (서비스에 굳이 안 넘겨도 됨)
@@ -84,6 +85,7 @@ export class DashboardController {
     // 3) 서비스 시그니처에 맞는 페이로드 구성 (lootUsers는 넘기지 않아도 서비스 쪽 로직에 지장 없음)
     const payloadForSvc = {
       cutAtIso,                                 // ✅ 필수 문자열
+      force: body.force === true,
       looterLoginId: body.looterLoginId ?? null,
       items: body.items,                        // (레거시) 있으면 전달
       itemsEx,                                  // (신규) 정규화된 배열
@@ -127,12 +129,15 @@ export class DashboardController {
   async incDaze(
     @Param('id') id: string,
     @Req() req: any,
-    @Body() body: { clanId?: string | number; atIso?: string },
+    @Body() body: { clanId?: string | number; atIso?: string; force?: boolean },
   ) {
     // JWT에서 clanId 꺼내는 방식은 프로젝트 컨벤션대로
     const clanId = req.user?.clanId ?? body?.clanId;
     const actorLoginId = req.user?.loginId ?? 'system';
-    return this.svc.incDazeByBossMeta(clanId, id, actorLoginId);
+    return this.svc.incDazeByBossMeta(clanId, id, actorLoginId, {
+      atIso: body?.atIso,
+      force: body?.force === true,
+    });
   }
 
   @UseGuards(JwtAuthGuard)
