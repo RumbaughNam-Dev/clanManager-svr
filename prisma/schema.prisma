@@ -79,6 +79,18 @@ model BossMeta {
   @@index([isFixBoss], map: "idx_bossmeta_isfixboss")
 }
 
+model DashboardBossVisibilityExclusion {
+  id         BigInt   @id @default(autoincrement())
+  clanId     BigInt   @map("clan_id")
+  userId     BigInt   @map("user_id")
+  bossMetaId BigInt   @map("boss_meta_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([clanId, userId, bossMetaId], map: "uq_dashboard_boss_visibility_exclusions")
+  @@index([clanId, userId], map: "idx_dashboard_boss_visibility_exclusions_clan_user")
+  @@map("dashboard_boss_visibility_exclusions")
+}
+
 model BossTimeline {
   id              BigInt             @id @default(autoincrement())
   clanId          BigInt

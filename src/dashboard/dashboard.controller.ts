@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Put,
   Post,
   Patch,
   Param,
@@ -31,9 +32,63 @@ export class DashboardController {
    */
   @UseGuards(JwtOptionalAuthGuard)
   @Post('bosses')
-  async list(@Req() req: any) {
+  async list(
+    @Req() req: any,
+    @Body() body?: { includeExcluded?: boolean; forEdit?: boolean },
+  ) {
     const clanId = req.user?.clanId ?? null;
-    return this.svc.listBossesForClan(clanId);
+    const userId = req.user?.sub ?? req.user?.id ?? null;
+    const includeExcluded = body?.includeExcluded === true || body?.forEdit === true;
+    return this.svc.listBossesForClan(clanId, userId, includeExcluded);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('boss-visibility/exclusions')
+  async replaceBossVisibilityExclusions(
+    @Req() req: any,
+    @Body()
+    body: {
+      clanId?: number | string;
+      userId?: number | string;
+      bossMetaIds?: Array<number | string>;
+    },
+  ) {
+    const clanIdRaw = req.user?.clanId ?? body?.clanId;
+    const userIdRaw = req.user?.sub ?? req.user?.id ?? body?.userId;
+    if (!clanIdRaw || !userIdRaw) {
+      throw new BadRequestException('clanId, userId가 필요합니다.');
+    }
+
+    return this.svc.replaceBossVisibilityExclusions({
+      clanIdRaw,
+      userIdRaw,
+      bossMetaIds: body?.bossMetaIds ?? [],
+    });
+  }
+
+  // 일부 HTTP 래퍼가 PUT을 POST로 전송하는 케이스 대응
+  @UseGuards(JwtAuthGuard)
+  @Post('boss-visibility/exclusions')
+  async replaceBossVisibilityExclusionsByPost(
+    @Req() req: any,
+    @Body()
+    body: {
+      clanId?: number | string;
+      userId?: number | string;
+      bossMetaIds?: Array<number | string>;
+    },
+  ) {
+    const clanIdRaw = req.user?.clanId ?? body?.clanId;
+    const userIdRaw = req.user?.sub ?? req.user?.id ?? body?.userId;
+    if (!clanIdRaw || !userIdRaw) {
+      throw new BadRequestException('clanId, userId가 필요합니다.');
+    }
+
+    return this.svc.replaceBossVisibilityExclusions({
+      clanIdRaw,
+      userIdRaw,
+      bossMetaIds: body?.bossMetaIds ?? [],
+    });
   }
 
   /**

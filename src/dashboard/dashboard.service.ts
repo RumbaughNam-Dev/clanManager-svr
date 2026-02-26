@@ -75,7 +75,7 @@ export class DashboardService {
    * - 좌/중(=tracked/forgotten): isFixBoss !== 'Y'만 포함 (랜덤 보스)
    * - 우측(=fixed): isFixBoss === 'Y'만 따로 반환 (고정 보스)
    */
-  async listBossesForClan(clanIdRaw?: any): Promise<{
+  async listBossesForClan(clanIdRaw?: any, userIdRaw?: any, includeExcluded = false): Promise<{
     ok: true;
     serverTime: string;
     tracked: BossDto[];
@@ -91,7 +91,7 @@ export class DashboardService {
       nextSpawnAt: string | null;
     }>;
   }> {
-    const metas = await this.prisma.bossMeta.findMany({
+    let metas = await this.prisma.bossMeta.findMany({
       select: {
         id: true,
         name: true,
@@ -105,7 +105,17 @@ export class DashboardService {
     });
 
     const clanId = this.toBigIntOrNull(clanIdRaw);
+    const userId = this.toBigIntOrNull(userIdRaw);
     const nowMs = Date.now();
+
+    if (!includeExcluded && clanId && userId) {
+      const exclusions = await this.prisma.dashboardBossVisibilityExclusion.findMany({
+        where: { clanId, userId },
+        select: { bossMetaId: true },
+      });
+      const excludedIds = new Set(exclusions.map((e) => String(e.bossMetaId)));
+      metas = metas.filter((m) => !excludedIds.has(String(m.id)));
+    }
 
     const latestByBoss: Record<string, Date> = {};
     if (clanId) {
@@ -254,6 +264,41 @@ fixed.sort((a, b) => a._sortMs - b._sortMs);
       tracked: trackedOut,
       forgotten: forgottenOut,
       fixed,
+    };
+  }
+
+  async replaceBossVisibilityExclusions(args: {
+    clanIdRaw: string | number;
+    userIdRaw: string | number;
+    bossMetaIds: Array<string | number>;
+  }) {
+    const clanId = this.toBigInt(args.clanIdRaw, 'clanId가 올바르지 않습니다.');
+    const userId = this.toBigInt(args.userIdRaw, 'userId가 올바르지 않습니다.');
+    const bossMetaIds = (args.bossMetaIds ?? [])
+      .map((id) => this.toBigInt(id, 'bossMetaIds 형식이 올바르지 않습니다.'));
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.dashboardBossVisibilityExclusion.deleteMany({
+        where: { clanId, userId },
+      });
+
+      if (bossMetaIds.length > 0) {
+        await tx.dashboardBossVisibilityExclusion.createMany({
+          data: bossMetaIds.map((bossMetaId) => ({
+            clanId,
+            userId,
+            bossMetaId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    });
+
+    return {
+      ok: true,
+      clanId: Number(clanId),
+      userId: Number(userId),
+      savedCount: bossMetaIds.length,
     };
   }
 
