@@ -15,6 +15,7 @@ import { BossTimelineModule } from './bossTimeline/boss-timeline.module';
 import { TreasuryModule } from './treasury/treasury.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { PledgeRaidModule } from './pledgeRaid/pledgeRaid.module';
+import { ClansModule } from './clans/clans.module';
 
 @Module({
   imports: [
@@ -29,7 +30,8 @@ import { PledgeRaidModule } from './pledgeRaid/pledgeRaid.module';
     BossTimelineModule,
     TreasuryModule,
     FeedbackModule,
-    PledgeRaidModule
+    PledgeRaidModule,
+    ClansModule,
   ],
   controllers: [AppController, TimeController],
   providers: [AppService, PrismaService],

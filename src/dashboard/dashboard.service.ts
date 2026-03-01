@@ -137,13 +137,12 @@ export class DashboardService {
         SELECT t.bossName AS bossName, t.noGenCount AS noGenCount
         FROM BossTimeline t
         INNER JOIN (
-          SELECT bossName, MAX(cutAt) AS lastCutAt
+          SELECT bossName, MAX(id) AS lastId
           FROM BossTimeline
           WHERE clanId = ${clanId}
           GROUP BY bossName
         ) j
-          ON j.bossName = t.bossName
-        AND j.lastCutAt = t.cutAt
+          ON j.lastId = t.id
         WHERE t.clanId = ${clanId}
       `;
       dazeMap = new Map(rows.map(r => [r.bossName, r.noGenCount ?? 0]));
@@ -1078,7 +1077,7 @@ async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
         WHERE t.clanId = ${clanId} AND t.bossName = ${bossName}
         GROUP BY t.id, t.cutAt
         HAVING COUNT(li.id) = 0 AND COUNT(ld.id) = 0
-        ORDER BY t.cutAt DESC
+        ORDER BY t.cutAt DESC, t.id DESC
         LIMIT 1
       `;
       if (empty.length > 0) {
@@ -1090,7 +1089,7 @@ async importDiscord(clanId: bigint, actorLoginId: string, text: string) {
     const row = await this.prisma.bossTimeline.findFirst({
       where: { clanId, bossName },
       select: { id: true },
-      orderBy: { cutAt: 'desc' },
+      orderBy: [{ cutAt: 'desc' }, { id: 'desc' }],
     });
     if (!row) return { ok: true, id: null, empty: true };
 

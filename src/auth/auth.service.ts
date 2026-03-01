@@ -52,7 +52,7 @@ async login(loginId: string, password: string) {
     where: { id: user.id },
     select: {
       id: true, loginId: true, role: true, clanId: true,
-      clan: { select: { world: true, serverNo: true, name: true } },
+      clan: { select: { world: true, serverNo: true, name: true, discordLink: true } },
     },
   });
   if (!withClan) throw new UnauthorizedException();
@@ -78,6 +78,7 @@ async login(loginId: string, password: string) {
       role: withClan.role as Role,
       clanId: withClan.clanId ? String(withClan.clanId) : null,
       clanName: withClan.clan?.name ?? null,
+      clanDiscordLink: withClan.clan?.discordLink ?? null,
       serverDisplay,
     },
     accessToken,
@@ -95,7 +96,7 @@ async login(loginId: string, password: string) {
         loginId: true,
         role: true,
         clanId: true,
-        clan: { select: { name: true, world: true, serverNo: true } },
+        clan: { select: { name: true, world: true, serverNo: true, discordLink: true } },
       },
     });
     if (!u) throw new UnauthorizedException();
@@ -110,6 +111,7 @@ async login(loginId: string, password: string) {
         role: u.role as Role,
         clanId: u.clanId ? String(u.clanId) : null,
         clanName: u.clan?.name ?? null,
+        clanDiscordLink: u.clan?.discordLink ?? null,
         serverDisplay,
       },
     };
