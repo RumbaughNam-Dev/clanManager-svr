@@ -78,6 +78,35 @@ export class ClansService {
     }
   }
 
+  private normalizeReason(input?: string | null) {
+    const value = String(input ?? '').trim();
+    if (!value) {
+      throw new BadRequestException('reason은 필수입니다.');
+    }
+    if (value.length > 500) {
+      throw new BadRequestException('reason은 500자 이하여야 합니다.');
+    }
+    return value;
+  }
+
+  private normalizeHostileClanName(input?: string | null) {
+    const value = String(input ?? '').trim();
+    if (!value) return null;
+    if (value.length > 100) {
+      throw new BadRequestException('hostileClanName은 100자 이하여야 합니다.');
+    }
+    return value;
+  }
+
+  private normalizeHostileAt(input?: string | null) {
+    if (input == null || String(input).trim() === '') return new Date();
+    const dt = new Date(input);
+    if (Number.isNaN(dt.getTime())) {
+      throw new BadRequestException('hostileAt 형식이 올바르지 않습니다.');
+    }
+    return dt;
+  }
+
   async getDiscordLink(clanIdRaw: string, user: { role?: Role; clanId?: any }) {
     const clanId = this.toBigInt(clanIdRaw, 'clanId가 올바르지 않습니다.');
     this.ensureReadable(clanId, user);
@@ -115,5 +144,137 @@ export class ClansService {
       clanId: String(clan.id),
       discordLink: clan.discordLink ?? null,
     };
+  }
+
+  async listHostiles(clanIdRaw: string, user: { role?: Role; clanId?: any }) {
+    const clanId = this.toBigInt(clanIdRaw, 'clanId가 올바르지 않습니다.');
+    this.ensureReadable(clanId, user);
+
+    const items = await this.prisma.clanHostile.findMany({
+      where: {
+        clanId,
+        OR: [{ delYn: null }, { delYn: 'N' }],
+      },
+      orderBy: [{ hostileAt: 'desc' }, { seq: 'desc' }],
+      select: {
+        seq: true,
+        clanId: true,
+        userId: true,
+        hostileClanName: true,
+        reason: true,
+        delYn: true,
+        hostileAt: true,
+        createdAt: true,
+      },
+    });
+
+    const userIds = [...new Set(items.map((item) => String(item.userId)))];
+    const users =
+      userIds.length > 0
+        ? await this.prisma.user.findMany({
+            where: { id: { in: userIds.map((id) => BigInt(id)) } },
+            select: { id: true, loginId: true },
+          })
+        : [];
+    const userLoginIdMap = new Map(users.map((u) => [String(u.id), u.loginId]));
+
+    return {
+      ok: true,
+      items: items.map((item) => ({
+        seq: Number(item.seq),
+        clanId: Number(item.clanId),
+        userId: Number(item.userId),
+        userLoginId: userLoginIdMap.get(String(item.userId)) ?? null,
+        hostileClanName: item.hostileClanName ?? null,
+        reason: item.reason,
+        hostileAt: item.hostileAt.toISOString(),
+        createdAt: item.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async createHostile(
+    clanIdRaw: string,
+    user: { role?: Role; clanId?: any; sub?: any; id?: any },
+    body: {
+      userId?: string | number;
+      hostileClanName?: string | null;
+      reason?: string | null;
+      hostileAt?: string | null;
+    },
+  ) {
+    const clanId = this.toBigInt(clanIdRaw, 'clanId가 올바르지 않습니다.');
+    this.ensureWritable(clanId, user);
+    const userIdRaw = body.userId ?? user.sub ?? user.id;
+    if (!userIdRaw) throw new BadRequestException('userId가 없습니다.');
+    const userId = this.toBigInt(userIdRaw, 'userId가 올바르지 않습니다.');
+
+    const created = await this.prisma.clanHostile.create({
+      data: {
+        clanId,
+        userId,
+        hostileClanName: this.normalizeHostileClanName(body.hostileClanName),
+        reason: this.normalizeReason(body.reason),
+        delYn: null,
+        hostileAt: this.normalizeHostileAt(body.hostileAt),
+      },
+      select: {
+        seq: true,
+        clanId: true,
+        userId: true,
+        hostileClanName: true,
+        reason: true,
+        delYn: true,
+        hostileAt: true,
+        createdAt: true,
+      },
+    });
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { loginId: true },
+    });
+
+    return {
+      ok: true,
+      item: {
+        seq: Number(created.seq),
+        clanId: Number(created.clanId),
+        userId: Number(created.userId),
+        userLoginId: actor?.loginId ?? null,
+        hostileClanName: created.hostileClanName ?? null,
+        reason: created.reason,
+        hostileAt: created.hostileAt.toISOString(),
+        createdAt: created.createdAt.toISOString(),
+      },
+    };
+  }
+
+  async deleteHostile(
+    clanIdRaw: string,
+    seqRaw: string,
+    user: { role?: Role; clanId?: any },
+  ) {
+    const clanId = this.toBigInt(clanIdRaw, 'clanId가 올바르지 않습니다.');
+    const seq = this.toBigInt(seqRaw, 'seq가 올바르지 않습니다.');
+    this.ensureWritable(clanId, user);
+
+    const item = await this.prisma.clanHostile.findUnique({
+      where: { seq },
+      select: { seq: true, clanId: true, delYn: true },
+    });
+    if (!item) throw new NotFoundException('적대 항목을 찾을 수 없습니다.');
+    if (user.role !== 'SUPERADMIN' && item.clanId !== clanId) {
+      throw new ForbiddenException('같은 혈맹만 삭제할 수 있습니다.');
+    }
+    if (item.delYn === 'Y') {
+      return { ok: true, seq: Number(item.seq) };
+    }
+
+    await this.prisma.clanHostile.update({
+      where: { seq },
+      data: { delYn: 'Y' },
+    });
+    return { ok: true, seq: Number(item.seq) };
   }
 }

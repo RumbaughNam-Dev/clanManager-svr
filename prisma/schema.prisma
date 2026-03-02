@@ -92,6 +92,21 @@ model DashboardBossVisibilityExclusion {
   @@map("dashboard_boss_visibility_exclusions")
 }
 
+model ClanHostile {
+  seq       BigInt   @id @default(autoincrement())
+  clanId    BigInt   @map("clan_id")
+  userId    BigInt   @map("user_id")
+  hostileClanName String? @map("hostile_clan_name") @db.VarChar(100)
+  reason    String   @db.VarChar(500)
+  delYn     String?  @map("del_yn") @db.VarChar(1)
+  hostileAt DateTime @map("hostile_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([clanId], map: "idx_clan_hostiles_clan_id")
+  @@index([userId], map: "idx_clan_hostiles_user_id")
+  @@map("clan_hostiles")
+}
+
 model BossTimeline {
   id              BigInt             @id @default(autoincrement())
   clanId          BigInt
