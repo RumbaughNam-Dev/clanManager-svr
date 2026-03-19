@@ -93,7 +93,7 @@ export class AdminClanRequestsService {
 
       // 2) 사용자 upsert (최초 등록자는 반드시 ADMIN)
       await tx.user.upsert({
-        where: { loginId: req.loginId },
+        where: { uq_loginId_clanId: { loginId: req.loginId, clanId: clan.id } },
         create: {
           loginId: req.loginId,
           passwordHash: req.passwordHash, // 요청에 저장된 해시 그대로 사용

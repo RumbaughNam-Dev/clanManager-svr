@@ -518,7 +518,7 @@ export class PledgeRaidService {
    */
   async getClanMembers(loginId: string) {
     // 1) 로그인 사용자 조회
-    const currentUser = await this.prisma.user.findUnique({
+    const currentUser = await this.prisma.user.findFirst({
       where: { loginId },
       select: {
         clanId: true,

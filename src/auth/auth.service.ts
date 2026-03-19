@@ -21,72 +21,106 @@ export class AuthService {
     return r;
   }
 
-  async validateUser(loginId: string, password: string) {
-    const user = await this.prisma.user.findUnique({
+  async validateUsers(loginId: string, password: string) {
+    const users = await this.prisma.user.findMany({
       where: { loginId },
       select: { id: true, loginId: true, passwordHash: true, role: true, clanId: true },
     });
-    if (!user) throw new UnauthorizedException('아이디 또는 비밀번호가 올바르지 않습니다.');
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('아이디 또는 비밀번호가 올바르지 않습니다.');
-    return user;
+    if (users.length === 0) throw new UnauthorizedException('아이디 또는 비밀번호가 올바르지 않습니다.');
+
+    // 비밀번호가 일치하는 계정만 필터
+    const matched: typeof users = [];
+    for (const u of users) {
+      if (await bcrypt.compare(password, u.passwordHash)) matched.push(u);
+    }
+    if (matched.length === 0) throw new UnauthorizedException('아이디 또는 비밀번호가 올바르지 않습니다.');
+    return matched;
   }
 
   // 로그인
-async login(loginId: string, password: string) {
-  const user = await this.validateUser(loginId, password);
+  async login(loginId: string, password: string, clanId?: string) {
+    const matched = await this.validateUsers(loginId, password);
 
-  // 🔴 기본 비밀번호인지 확인 (1234가 현재 해시와 일치하는지)
-  const isDefault = await bcrypt.compare('1234', user.passwordHash);
-  if (isDefault) {
-    // ✅ 토큰 발급하지 말고 강제 변경 플래그만 반환
+    // 다중 계정이고 clanId가 없으면 계정 목록 반환
+    if (matched.length > 1 && !clanId) {
+      const accounts = await Promise.all(
+        matched.map(async (u) => {
+          const clan = u.clanId
+            ? await this.prisma.clan.findUnique({
+                where: { id: u.clanId },
+                select: { name: true, world: true, serverNo: true },
+              })
+            : null;
+          return {
+            clanId: u.clanId ? String(u.clanId) : null,
+            clanName: clan?.name ?? null,
+            serverDisplay: clan ? `${clan.world} ${clan.serverNo}서버` : null,
+          };
+        }),
+      );
+      return { ok: true, multipleAccounts: true, accounts };
+    }
+
+    // 단일 계정이거나 clanId가 지정된 경우
+    let user: (typeof matched)[0];
+    if (clanId) {
+      const found = matched.find((u) => u.clanId && String(u.clanId) === clanId);
+      if (!found) throw new UnauthorizedException('해당 혈맹의 계정을 찾을 수 없습니다.');
+      user = found;
+    } else {
+      user = matched[0];
+    }
+
+    // 기본 비밀번호인지 확인 (1234가 현재 해시와 일치하는지)
+    const isDefault = await bcrypt.compare('1234', user.passwordHash);
+    if (isDefault) {
+      return {
+        ok: true,
+        mustChangePassword: true,
+        user: { loginId },
+      };
+    }
+
+    // 토큰 발급 로직
+    const withClan = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true, loginId: true, role: true, clanId: true,
+        clan: { select: { world: true, serverNo: true, name: true, discordLink: true } },
+      },
+    });
+    if (!withClan) throw new UnauthorizedException();
+
+    const payload = {
+      sub: String(withClan.id),
+      role: withClan.role as Role,
+      loginId: withClan.loginId,
+      clanId: withClan.clanId ? String(withClan.clanId) : null,
+    };
+
+    const accessToken = this.tokens.signAccess(payload);
+    const refreshToken = this.tokens.signRefresh({ sub: payload.sub });
+
+    const serverDisplay =
+      withClan.clan ? `${withClan.clan.world} ${withClan.clan.serverNo}서버` : null;
+
     return {
       ok: true,
-      mustChangePassword: true,
-      user: { loginId }, // 프론트 모달에서 다시 사용
+      user: {
+        id: String(withClan.id),
+        loginId: withClan.loginId,
+        role: withClan.role as Role,
+        clanId: withClan.clanId ? String(withClan.clanId) : null,
+        clanName: withClan.clan?.name ?? null,
+        clanDiscordLink: withClan.clan?.discordLink ?? null,
+        serverDisplay,
+      },
+      accessToken,
+      refreshToken,
+      clanName: withClan.clan?.name ?? null,
+      serverDisplay,
     };
   }
-
-  // (아래는 기존 토큰 발급 로직 그대로)
-  const withClan = await this.prisma.user.findUnique({
-    where: { id: user.id },
-    select: {
-      id: true, loginId: true, role: true, clanId: true,
-      clan: { select: { world: true, serverNo: true, name: true, discordLink: true } },
-    },
-  });
-  if (!withClan) throw new UnauthorizedException();
-
-  const payload = {
-    sub: String(withClan.id),
-    role: withClan.role as Role,
-    loginId: withClan.loginId,
-    clanId: withClan.clanId ? String(withClan.clanId) : null,
-  };
-
-  const accessToken = this.tokens.signAccess(payload);
-  const refreshToken = this.tokens.signRefresh({ sub: payload.sub });
-
-  const serverDisplay =
-    withClan.clan ? `${withClan.clan.world} ${withClan.clan.serverNo}서버` : null;
-
-  return {
-    ok: true,
-    user: {
-      id: String(withClan.id),
-      loginId: withClan.loginId,
-      role: withClan.role as Role,
-      clanId: withClan.clanId ? String(withClan.clanId) : null,
-      clanName: withClan.clan?.name ?? null,
-      clanDiscordLink: withClan.clan?.discordLink ?? null,
-      serverDisplay,
-    },
-    accessToken,
-    refreshToken,
-    clanName: withClan.clan?.name ?? null,
-    serverDisplay,
-  };
-}
 
   async me(userJwt: { sub: string }) {
     const u = await this.prisma.user.findUnique({
@@ -169,19 +203,24 @@ async login(loginId: string, password: string) {
     return { ok: true };
   }
 
-  // ✅ 비밀번호 변경 API 로직
+  // ✅ 비밀번호 변경 API 로직 (같은 loginId의 모든 계정 비밀번호를 일괄 변경)
   async changePassword(loginId: string, oldPassword: string, newPassword: string) {
-    const user = await this.prisma.user.findUnique({
+    const users = await this.prisma.user.findMany({
       where: { loginId },
       select: { id: true, passwordHash: true },
     });
-    if (!user) throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
-    const ok = await bcrypt.compare(oldPassword, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('현재 비밀번호가 올바르지 않습니다.');
+    if (users.length === 0) throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
+
+    // 이전 비밀번호 확인 (첫 번째 매칭 계정 기준)
+    let verified = false;
+    for (const u of users) {
+      if (await bcrypt.compare(oldPassword, u.passwordHash)) { verified = true; break; }
+    }
+    if (!verified) throw new UnauthorizedException('현재 비밀번호가 올바르지 않습니다.');
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await this.prisma.user.update({
-      where: { id: user.id },
+    await this.prisma.user.updateMany({
+      where: { loginId },
       data: { passwordHash: hash },
     });
     return { ok: true };

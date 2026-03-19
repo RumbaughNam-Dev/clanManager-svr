@@ -74,7 +74,7 @@ export class ClanRequestsService {
 
         // 2) User upsert (최초 등록자는 ADMIN, 해당 클랜으로 연결)
         await tx.user.upsert({
-          where: { loginId: input.loginId },
+          where: { uq_loginId_clanId: { loginId: input.loginId, clanId: clan.id } },
           create: {
             loginId: input.loginId,
             passwordHash,

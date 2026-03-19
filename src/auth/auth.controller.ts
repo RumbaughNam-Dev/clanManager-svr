@@ -8,9 +8,9 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  login(@Body() body: { loginId: string; password: string }) {
+  login(@Body() body: { loginId: string; password: string; clanId?: string }) {
     // 서비스에서 mustChangePassword 여부까지 리턴
-    return this.authService.login(body.loginId, body.password);
+    return this.authService.login(body.loginId, body.password, body.clanId);
   }
 
   // ✅ 추가
