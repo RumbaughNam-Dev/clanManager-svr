@@ -143,7 +143,7 @@ function isSuperAdmin(role: string) {
 
 /** ───────────────── Controller ───────────────── */
 
-@Controller('/v1/feedback')
+@Controller('/feedback')
 export class FeedbackController {
   constructor(private readonly feedbackService: FeedbackService) {}
 

@@ -11,7 +11,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Express } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
-@Controller('v1/files')
+@Controller('files')
 @UseGuards(JwtAuthGuard) // 업로드는 로그인 필요
 export class FilesController {
   @Post('upload')

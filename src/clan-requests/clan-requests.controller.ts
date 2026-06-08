@@ -1,7 +1,7 @@
 import { Body, Controller, Post, } from '@nestjs/common';
 import { ClanRequestsService } from './clan-requests.service';
 
-@Controller('v1/clan-requests')
+@Controller('clan-requests')
 export class ClanRequestsController {
   constructor(private readonly svc: ClanRequestsService) {}
 

@@ -25,7 +25,7 @@ type JwtUser = {
 };
 
 @UseGuards(JwtAuthGuard)
-@Controller('v1/members')
+@Controller('members')
 export class MembersController {
   constructor(
     private readonly svc: MembersService,

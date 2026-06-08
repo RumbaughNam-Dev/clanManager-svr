@@ -16,7 +16,7 @@ import { ListTreasuryQueryDto, ListTreasuryResp } from './dto/list-treasury.dto'
 import { CreateManualInDto } from './dto/create-manual-in.dto';
 import { CreateManualOutDto } from './dto/create-manual-out.dto';
 
-@Controller('v1/treasury')
+@Controller('treasury')
 @UseGuards(JwtAuthGuard)
 export class TreasuryController {
   constructor(private readonly svc: TreasuryService) {}

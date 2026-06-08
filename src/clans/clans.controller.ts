@@ -12,7 +12,7 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ClansService } from './clans.service';
 
-@Controller('v1/clans')
+@Controller('clans')
 @UseGuards(JwtAuthGuard)
 export class ClansController {
   constructor(private readonly clansService: ClansService) {}

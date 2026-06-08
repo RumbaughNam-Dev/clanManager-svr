@@ -18,7 +18,7 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @UseGuards(JwtAuthGuard)
-@Controller('/v1/pledge-raid')
+@Controller('/pledge-raid')
 export class PledgeRaidController {
   constructor(private readonly service: PledgeRaidService) {}
 

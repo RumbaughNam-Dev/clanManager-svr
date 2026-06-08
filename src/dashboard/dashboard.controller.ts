@@ -19,9 +19,9 @@ import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import type { Express } from 'express';
-import { JwtOptionalAuthGuard } from 'src/auth/jwt-optional.guard';
+import { JwtOptionalAuthGuard } from '../auth/jwt-optional.guard';
 
-@Controller('v1/dashboard')
+@Controller('dashboard')
 export class DashboardController {
   constructor(private svc: DashboardService) {}
 

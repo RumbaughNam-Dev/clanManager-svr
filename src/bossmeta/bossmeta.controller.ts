@@ -1,7 +1,7 @@
 import { Controller, Post } from '@nestjs/common';
 import { BossMetaService } from './bossmeta.service';
 
-@Controller('v1/bossmeta')
+@Controller('bossmeta')
 export class BossMetaController {
   constructor(private readonly service: BossMetaService) {}
 

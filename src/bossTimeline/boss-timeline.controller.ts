@@ -13,7 +13,7 @@ import { ListTimelinesResp } from './dto/timeline.dto';
 import { UpdateDistributionPaidDto } from './dto/update-distribution-paid.dto';
 import { CutBossDto } from './dto/cut-boss.dto';
 
-@Controller('v1/boss-timelines')
+@Controller('boss-timelines')
 @UseGuards(JwtAuthGuard)
 export class BossTimelineController {
   constructor(private readonly svc: BossTimelineService) {}

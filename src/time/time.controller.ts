@@ -1,6 +1,6 @@
 import { Controller, Post } from '@nestjs/common';
 
-@Controller('v1/time')
+@Controller('time')
 export class TimeController {
   @Post('now')
   now() {
