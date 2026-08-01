@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../prisma.service';
+import { AllbluePrismaService } from '../allblue-prisma.service';
 import * as bcrypt from 'bcrypt';
 import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 
@@ -9,20 +9,20 @@ export class AllblueService {
   private jwtSecret: string;
 
   constructor(
-    private prisma: PrismaService,
+    private prisma: AllbluePrismaService,
     private config: ConfigService,
   ) {
     this.jwtSecret = this.config.get<string>('JWT_SECRET', 'dev-allblue-secret');
   }
 
   private async logHistory(userId: number, result: string, ip?: string) {
-    await this.prisma.allblue_login_history.create({
+    await this.prisma.login_history.create({
       data: { userId, result, ipAddress: ip },
     });
   }
 
   async login(userId: string, password: string, ip?: string) {
-    const user = await this.prisma.allblue_user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { userId },
     });
 
@@ -79,7 +79,7 @@ export class AllblueService {
     );
 
     // DB 업데이트
-    await this.prisma.allblue_user.update({
+    await this.prisma.user.update({
       where: { id: user.id },
       data: {
         refreshToken,
@@ -103,7 +103,7 @@ export class AllblueService {
   }
 
   async logout(sub: string) {
-    await this.prisma.allblue_user.update({
+    await this.prisma.user.update({
       where: { id: Number(sub) },
       data: { refreshToken: null },
     });
@@ -118,7 +118,7 @@ export class AllblueService {
       return { success: false, message: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
 
-    const user = await this.prisma.allblue_user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: Number(decoded.sub) },
     });
 

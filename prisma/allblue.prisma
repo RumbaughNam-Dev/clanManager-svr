@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/allblue-client"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("ALLBLUE_DATABASE_URL")
+}
+
+model user {
+  id           Int             @id @default(autoincrement())
+  userId       String          @unique(map: "uk_userId") @db.VarChar(50)
+  password     String          @db.VarChar(255)
+  userName     String          @db.VarChar(50)
+  email        String?         @db.VarChar(100)
+  phone        String?         @db.VarChar(20)
+  userType     String          @default("instructor") @db.VarChar(20)
+  status       String          @default("pending") @db.VarChar(20)
+  smbAddress   String?         @db.VarChar(255)
+  smbAccount   String?         @db.VarChar(100)
+  smbPassword  String?         @db.VarChar(255)
+  refreshToken String?         @db.VarChar(500)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  lastLoginAt  DateTime?
+  loginHistory login_history[]
+}
+
+model login_history {
+  id        BigInt   @id @default(autoincrement())
+  userId    Int
+  result    String   @db.VarChar(20)
+  ipAddress String?  @db.VarChar(45)
+  createdAt DateTime @default(now())
+  user      user     @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}

@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AllblueController } from './allblue.controller';
 import { AllblueService } from './allblue.service';
-import { PrismaService } from '../prisma.service';
+import { AllbluePrismaService } from '../allblue-prisma.service';
 
 @Module({
   controllers: [AllblueController],
-  providers: [AllblueService, PrismaService],
+  providers: [AllblueService, AllbluePrismaService],
 })
 export class AllblueModule {}
