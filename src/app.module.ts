@@ -16,6 +16,7 @@ import { TreasuryModule } from './treasury/treasury.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { PledgeRaidModule } from './pledgeRaid/pledgeRaid.module';
 import { ClansModule } from './clans/clans.module';
+import { AllblueModule } from './allblue/allblue.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { ClansModule } from './clans/clans.module';
     FeedbackModule,
     PledgeRaidModule,
     ClansModule,
+    AllblueModule,
   ],
   controllers: [AppController, TimeController],
   providers: [AppService, PrismaService],
