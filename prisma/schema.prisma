@@ -344,28 +344,36 @@ enum FeedbackStatus {
 }
 
 model allblue_user {
-  id           BigInt    @id @default(autoincrement())
-  userId       String    @unique @db.VarChar(50)
-  passwordHash String    @db.VarChar(255)
+  id           Int       @id @default(autoincrement())
+  userId       String    @unique(map: "uk_userId") @db.VarChar(50)
+  password     String    @db.VarChar(255)
   userName     String    @db.VarChar(50)
+  email        String?   @db.VarChar(100)
+  phone        String?   @db.VarChar(20)
   userType     String    @default("instructor") @db.VarChar(20)
   status       String    @default("pending") @db.VarChar(20)
+  smbAddress   String?   @db.VarChar(255)
+  smbAccount   String?   @db.VarChar(100)
+  smbPassword  String?   @db.VarChar(255)
   refreshToken String?   @db.VarChar(500)
-  lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
   loginHistory allblue_login_history[]
+
+  @@map("user")
 }
 
 model allblue_login_history {
   id        BigInt   @id @default(autoincrement())
-  userId    BigInt
+  userId    Int
   result    String   @db.VarChar(20) // success, fail_password, fail_status, fail_duplicate
   ipAddress String?  @db.VarChar(45)
   createdAt DateTime @default(now())
   user      allblue_user @relation(fields: [userId], references: [id])
 
   @@index([userId, createdAt])
+  @@map("login_history")
 }
 
 enum TreasuryEntryType {

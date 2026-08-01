@@ -15,9 +15,9 @@ export class AllblueService {
     this.jwtSecret = this.config.get<string>('JWT_SECRET', 'dev-allblue-secret');
   }
 
-  private async logHistory(userId: BigInt, result: string, ip?: string) {
+  private async logHistory(userId: number, result: string, ip?: string) {
     await this.prisma.allblue_login_history.create({
-      data: { userId: userId as bigint, result, ipAddress: ip },
+      data: { userId, result, ipAddress: ip },
     });
   }
 
@@ -45,7 +45,7 @@ export class AllblueService {
     }
 
     // 비밀번호 비교
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       await this.logHistory(user.id, 'fail_password', ip);
       return { success: false, message: '아이디 또는 비밀번호가 올바르지 않습니다' };
@@ -93,7 +93,7 @@ export class AllblueService {
         accessToken,
         refreshToken,
         user: {
-          id: Number(user.id),
+          id: user.id,
           userId: user.userId,
           userName: user.userName,
           userType: user.userType,
@@ -104,7 +104,7 @@ export class AllblueService {
 
   async logout(sub: string) {
     await this.prisma.allblue_user.update({
-      where: { id: BigInt(sub) },
+      where: { id: Number(sub) },
       data: { refreshToken: null },
     });
     return { success: true };
@@ -119,7 +119,7 @@ export class AllblueService {
     }
 
     const user = await this.prisma.allblue_user.findUnique({
-      where: { id: BigInt(decoded.sub) },
+      where: { id: Number(decoded.sub) },
     });
 
     if (!user || user.refreshToken !== refreshToken) {
