@@ -102,6 +102,32 @@ export class AllblueService {
     };
   }
 
+  async getFormItems(formId: string, instructorId: number) {
+    if (!formId) {
+      return { success: false, message: 'formId는 필수입니다' };
+    }
+
+    // 강사 커스텀 항목 조회
+    const customItems = await this.prisma.form_item.findMany({
+      where: { formId, instructorId },
+      orderBy: { seq: 'asc' },
+      select: { id: true, formId: true, seq: true, content: true, itemType: true },
+    });
+
+    if (customItems.length > 0) {
+      return { success: true, data: customItems };
+    }
+
+    // 기본 템플릿 반환
+    const defaultItems = await this.prisma.form_item.findMany({
+      where: { formId, instructorId: null },
+      orderBy: { seq: 'asc' },
+      select: { id: true, formId: true, seq: true, content: true, itemType: true },
+    });
+
+    return { success: true, data: defaultItems };
+  }
+
   async logout(sub: string) {
     await this.prisma.user.update({
       where: { id: Number(sub) },

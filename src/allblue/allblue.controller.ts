@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AllblueService } from './allblue.service';
 import { AllblueJwtAuthGuard } from './allblue-jwt-auth.guard';
 
@@ -16,6 +16,12 @@ export class AllblueController {
   @Post('doInstructorLogout')
   logout(@Req() req: any) {
     return this.allblueService.logout(req.user.sub);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('form/items')
+  getFormItems(@Query('formId') formId: string, @Req() req: any) {
+    return this.allblueService.getFormItems(formId, Number(req.user.sub));
   }
 
   @Post('refreshToken')

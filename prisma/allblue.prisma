@@ -37,3 +37,17 @@ model login_history {
 
   @@index([userId, createdAt])
 }
+
+model form_item {
+  id           Int      @id @default(autoincrement())
+  instructorId Int?
+  formId       String   @db.VarChar(50)
+  seq          Int
+  content      String   @db.Text
+  itemType     String   @db.VarChar(50)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([formId, instructorId, seq])
+  @@map("allblue_form_item")
+}
