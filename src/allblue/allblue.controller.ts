@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AllblueService } from './allblue.service';
 import { AllblueJwtAuthGuard } from './allblue-jwt-auth.guard';
 
@@ -22,6 +22,17 @@ export class AllblueController {
   @Get('form/items')
   getFormItems(@Query('formId') formId: string, @Req() req: any) {
     return this.allblueService.getFormItems(formId, Number(req.user.sub));
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('form/submission')
+  createSubmission(@Body() body: { formId: string; diverName: string }, @Req() req: any) {
+    return this.allblueService.createSubmission(body.formId, body.diverName, Number(req.user.sub));
+  }
+
+  @Get('form/submission/:uuid')
+  getSubmission(@Param('uuid') uuid: string) {
+    return this.allblueService.getSubmission(uuid);
   }
 
   @Post('refreshToken')

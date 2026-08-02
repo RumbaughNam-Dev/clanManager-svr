@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AllbluePrismaService } from '../allblue-prisma.service';
 import * as bcrypt from 'bcrypt';
 import jwt, { Secret, SignOptions } from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AllblueService {
@@ -126,6 +127,66 @@ export class AllblueService {
     });
 
     return { success: true, data: defaultItems };
+  }
+
+  async createSubmission(formId: string, diverName: string, instructorId: number) {
+    if (!formId) {
+      return { success: false, message: 'formId는 필수입니다' };
+    }
+    if (!diverName?.trim()) {
+      return { success: false, message: '다이버 이름은 필수입니다' };
+    }
+
+    const uuid = randomUUID();
+    await this.prisma.form_submission.create({
+      data: { uuid, instructorId, formId, diverName: diverName.trim() },
+    });
+
+    return {
+      success: true,
+      data: {
+        uuid,
+        url: `https://rumbaugh.co.kr/form/${uuid}`,
+      },
+    };
+  }
+
+  async getSubmission(uuid: string) {
+    const submission = await this.prisma.form_submission.findUnique({
+      where: { uuid },
+    });
+
+    if (!submission) {
+      return { success: false, message: '존재하지 않는 양식입니다' };
+    }
+
+    // 강사 커스텀 항목 우선, 없으면 기본 템플릿
+    let items = await this.prisma.form_item.findMany({
+      where: { formId: submission.formId, instructorId: submission.instructorId },
+      orderBy: { seq: 'asc' },
+      select: { seq: true, content: true, itemType: true },
+    });
+
+    if (items.length === 0) {
+      items = await this.prisma.form_item.findMany({
+        where: { formId: submission.formId, instructorId: null },
+        orderBy: { seq: 'asc' },
+        select: { seq: true, content: true, itemType: true },
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        submission: {
+          uuid: submission.uuid,
+          formId: submission.formId,
+          diverName: submission.diverName,
+          status: submission.status,
+        },
+        items,
+      },
+    };
   }
 
   async logout(sub: string) {
