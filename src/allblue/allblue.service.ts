@@ -183,10 +183,32 @@ export class AllblueService {
           formId: submission.formId,
           diverName: submission.diverName,
           status: submission.status,
+          printed: submission.printed,
         },
         items,
       },
     };
+  }
+
+  async printSubmission(uuid: string) {
+    const submission = await this.prisma.form_submission.findUnique({
+      where: { uuid },
+    });
+
+    if (!submission) {
+      return { success: false, message: '존재하지 않는 양식입니다' };
+    }
+
+    if (submission.printed === 1) {
+      return { success: false, message: '이미 출력된 양식입니다.' };
+    }
+
+    await this.prisma.form_submission.update({
+      where: { uuid },
+      data: { printed: 1 },
+    });
+
+    return { success: true };
   }
 
   async logout(sub: string) {

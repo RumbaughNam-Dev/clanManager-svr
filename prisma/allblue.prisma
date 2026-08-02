@@ -59,6 +59,7 @@ model form_submission {
   formId       String   @db.VarChar(50)
   diverName    String   @db.VarChar(50)
   status       String   @default("pending") @db.VarChar(20)
+  printed      Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
