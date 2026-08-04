@@ -35,6 +35,16 @@ export class AllblueController {
     return this.allblueService.getSubmission(uuid);
   }
 
+  @Patch('form/submission/:uuid/save')
+  saveSubmission(@Param('uuid') uuid: string, @Body() body: any) {
+    return this.allblueService.saveSubmission(uuid, body);
+  }
+
+  @Patch('form/submission/:uuid/submit')
+  submitSubmission(@Param('uuid') uuid: string, @Body() body: any) {
+    return this.allblueService.submitSubmission(uuid, body);
+  }
+
   @Patch('form/submission/:uuid/print')
   printSubmission(@Param('uuid') uuid: string) {
     return this.allblueService.printSubmission(uuid);

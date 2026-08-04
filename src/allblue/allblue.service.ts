@@ -184,10 +184,76 @@ export class AllblueService {
           diverName: submission.diverName,
           status: submission.status,
           printed: submission.printed,
+          checkboxData: submission.checkboxData,
+          birthDate: submission.birthDate,
+          signDate: submission.signDate,
+          signatureData: submission.signatureData,
+          doctorName: submission.doctorName,
+          doctorSignatureData: submission.doctorSignatureData,
+          doctorDate: submission.doctorDate,
+          doctorPhone: submission.doctorPhone,
+          doctorAddress: submission.doctorAddress,
         },
         items,
       },
     };
+  }
+
+  async saveSubmission(uuid: string, body: any) {
+    const { checkboxData, birthDate, signDate, signatureData } = body;
+
+    if (!checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim()) {
+      return { success: false, message: '생년월일, 날짜, 서명을 모두 입력해주세요.' };
+    }
+
+    const submission = await this.prisma.form_submission.findUnique({ where: { uuid } });
+    if (!submission) {
+      return { success: false, message: '존재하지 않는 양식입니다' };
+    }
+    if (submission.status === 'submitted') {
+      return { success: false, message: '이미 제출된 양식입니다.' };
+    }
+
+    await this.prisma.form_submission.update({
+      where: { uuid },
+      data: { checkboxData, birthDate, signDate, signatureData },
+    });
+
+    return { success: true };
+  }
+
+  async submitSubmission(uuid: string, body: any) {
+    const {
+      checkboxData, birthDate, signDate, signatureData,
+      doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress,
+    } = body;
+
+    if (
+      !checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim() ||
+      !doctorName?.trim() || !doctorSignatureData?.trim() || !doctorDate?.trim() ||
+      !doctorPhone?.trim() || !doctorAddress?.trim()
+    ) {
+      return { success: false, message: '모든 항목을 입력해주세요.' };
+    }
+
+    const submission = await this.prisma.form_submission.findUnique({ where: { uuid } });
+    if (!submission) {
+      return { success: false, message: '존재하지 않는 양식입니다' };
+    }
+    if (submission.status === 'submitted') {
+      return { success: false, message: '이미 제출된 양식입니다.' };
+    }
+
+    await this.prisma.form_submission.update({
+      where: { uuid },
+      data: {
+        checkboxData, birthDate, signDate, signatureData,
+        doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress,
+        status: 'submitted',
+      },
+    });
+
+    return { success: true };
   }
 
   async printSubmission(uuid: string) {

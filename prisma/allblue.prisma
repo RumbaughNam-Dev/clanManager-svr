@@ -58,10 +58,19 @@ model form_submission {
   instructorId Int
   formId       String   @db.VarChar(50)
   diverName    String   @db.VarChar(50)
-  status       String   @default("pending") @db.VarChar(20)
-  printed      Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  status             String   @default("pending") @db.VarChar(20)
+  printed            Int      @default(0)
+  checkboxData       Json?
+  birthDate          String?  @db.VarChar(20)
+  signDate           String?  @db.VarChar(20)
+  signatureData      String?  @db.LongText
+  doctorName         String?  @db.VarChar(100)
+  doctorSignatureData String? @db.LongText
+  doctorDate         String?  @db.VarChar(20)
+  doctorPhone        String?  @db.VarChar(30)
+  doctorAddress      String?  @db.VarChar(255)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   @@index([instructorId])
   @@map("allblue_form_submission")
