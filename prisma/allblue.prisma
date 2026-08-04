@@ -61,6 +61,7 @@ model form_submission {
   status             String   @default("pending") @db.VarChar(20)
   printed            Int      @default(0)
   checkboxData       Json?
+  checkboxDetailData Json?
   birthDate          String?  @db.VarChar(20)
   signDate           String?  @db.VarChar(20)
   signatureData      String?  @db.VarChar(500)

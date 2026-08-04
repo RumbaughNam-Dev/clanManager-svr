@@ -195,6 +195,7 @@ export class AllblueService {
           doctorDate: submission.doctorDate,
           doctorPhone: submission.doctorPhone,
           doctorAddress: submission.doctorAddress,
+          checkboxDetailData: submission.checkboxDetailData,
         },
         items,
       },
@@ -202,7 +203,7 @@ export class AllblueService {
   }
 
   async saveSubmission(uuid: string, body: any) {
-    const { checkboxData, birthDate, signDate, signatureData } = body;
+    const { checkboxData, checkboxDetailData, birthDate, signDate, signatureData } = body;
 
     if (!checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim()) {
       return { success: false, message: '생년월일, 날짜, 서명을 모두 입력해주세요.' };
@@ -220,7 +221,7 @@ export class AllblueService {
 
     await this.prisma.form_submission.update({
       where: { uuid },
-      data: { checkboxData, birthDate, signDate, signatureData: signatureUrl },
+      data: { checkboxData, checkboxDetailData: checkboxDetailData ?? null, birthDate, signDate, signatureData: signatureUrl },
     });
 
     return { success: true };
@@ -228,7 +229,7 @@ export class AllblueService {
 
   async submitSubmission(uuid: string, body: any) {
     const {
-      checkboxData, birthDate, signDate, signatureData,
+      checkboxData, checkboxDetailData, birthDate, signDate, signatureData,
       doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress,
     } = body;
 
@@ -256,7 +257,7 @@ export class AllblueService {
     await this.prisma.form_submission.update({
       where: { uuid },
       data: {
-        checkboxData, birthDate, signDate, signatureData: signatureUrl,
+        checkboxData, checkboxDetailData: checkboxDetailData ?? null, birthDate, signDate, signatureData: signatureUrl,
         doctorName, doctorSignatureData: doctorSignatureUrl, doctorDate, doctorPhone, doctorAddress,
         status: 'submitted',
       },
