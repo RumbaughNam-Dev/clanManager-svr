@@ -49,7 +49,6 @@ model form_item {
   updatedAt    DateTime @updatedAt
 
   @@index([formId, instructorId, seq])
-  @@map("allblue_form_item")
 }
 
 model form_submission {
@@ -76,5 +75,4 @@ model form_submission {
   updatedAt          DateTime @updatedAt
 
   @@index([instructorId])
-  @@map("allblue_form_submission")
 }
