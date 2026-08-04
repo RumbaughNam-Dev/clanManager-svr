@@ -63,9 +63,9 @@ model form_submission {
   checkboxData       Json?
   birthDate          String?  @db.VarChar(20)
   signDate           String?  @db.VarChar(20)
-  signatureData      String?  @db.LongText
+  signatureData      String?  @db.VarChar(500)
   doctorName         String?  @db.VarChar(100)
-  doctorSignatureData String? @db.LongText
+  doctorSignatureData String? @db.VarChar(500)
   doctorDate         String?  @db.VarChar(20)
   doctorPhone        String?  @db.VarChar(30)
   doctorAddress      String?  @db.VarChar(255)

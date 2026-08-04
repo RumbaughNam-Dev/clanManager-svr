@@ -4,6 +4,7 @@ import { AllbluePrismaService } from '../allblue-prisma.service';
 import * as bcrypt from 'bcrypt';
 import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
+import { AllblueS3Service } from './allblue-s3.service';
 
 @Injectable()
 export class AllblueService {
@@ -12,6 +13,7 @@ export class AllblueService {
   constructor(
     private prisma: AllbluePrismaService,
     private config: ConfigService,
+    private s3: AllblueS3Service,
   ) {
     this.jwtSecret = this.config.get<string>('JWT_SECRET', 'dev-allblue-secret');
   }
@@ -214,9 +216,11 @@ export class AllblueService {
       return { success: false, message: '이미 제출된 양식입니다.' };
     }
 
+    const signatureUrl = await this.s3.processSignatureData(signatureData, uuid, 'diver');
+
     await this.prisma.form_submission.update({
       where: { uuid },
-      data: { checkboxData, birthDate, signDate, signatureData },
+      data: { checkboxData, birthDate, signDate, signatureData: signatureUrl },
     });
 
     return { success: true };
@@ -244,11 +248,16 @@ export class AllblueService {
       return { success: false, message: '이미 제출된 양식입니다.' };
     }
 
+    const [signatureUrl, doctorSignatureUrl] = await Promise.all([
+      this.s3.processSignatureData(signatureData, uuid, 'diver'),
+      this.s3.processSignatureData(doctorSignatureData, uuid, 'doctor'),
+    ]);
+
     await this.prisma.form_submission.update({
       where: { uuid },
       data: {
-        checkboxData, birthDate, signDate, signatureData,
-        doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress,
+        checkboxData, birthDate, signDate, signatureData: signatureUrl,
+        doctorName, doctorSignatureData: doctorSignatureUrl, doctorDate, doctorPhone, doctorAddress,
         status: 'submitted',
       },
     });
