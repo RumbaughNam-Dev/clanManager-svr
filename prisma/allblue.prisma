@@ -70,6 +70,8 @@ model form_submission {
   doctorDate         String?  @db.VarChar(20)
   doctorPhone        String?  @db.VarChar(30)
   doctorAddress      String?  @db.VarChar(255)
+  guardianSignature  String?  @db.VarChar(100)
+  doctorChecks       Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
