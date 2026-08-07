@@ -195,6 +195,7 @@ export class AllblueService {
           doctorDate: submission.doctorDate,
           doctorPhone: submission.doctorPhone,
           doctorAddress: submission.doctorAddress,
+          doctorAddressDetail: submission.doctorAddressDetail,
           checkboxDetailData: submission.checkboxDetailData,
           guardianSignature: submission.guardianSignature,
           doctorChecks: submission.doctorChecks,
@@ -232,14 +233,14 @@ export class AllblueService {
   async submitSubmission(uuid: string, body: any) {
     const {
       checkboxData, checkboxDetailData, birthDate, signDate, signatureData,
-      doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress,
+      doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress, doctorAddressDetail,
       guardianSignature, doctorChecks,
     } = body;
 
     if (
       !checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim() ||
       !doctorName?.trim() || !doctorSignatureData?.trim() || !doctorDate?.trim() ||
-      !doctorPhone?.trim() || !doctorAddress?.trim()
+      !doctorPhone?.trim() || !doctorAddress?.trim() || !doctorAddressDetail?.trim()
     ) {
       return { success: false, message: '모든 항목을 입력해주세요.' };
     }
@@ -261,7 +262,7 @@ export class AllblueService {
       where: { uuid },
       data: {
         checkboxData, checkboxDetailData: checkboxDetailData ?? null, birthDate, signDate, signatureData: signatureUrl,
-        doctorName, doctorSignatureData: doctorSignatureUrl, doctorDate, doctorPhone, doctorAddress,
+        doctorName, doctorSignatureData: doctorSignatureUrl, doctorDate, doctorPhone, doctorAddress, doctorAddressDetail,
         guardianSignature: guardianSignature ?? null, doctorChecks: doctorChecks ?? null,
         status: 'submitted',
       },
