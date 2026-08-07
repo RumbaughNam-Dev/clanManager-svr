@@ -190,15 +190,8 @@ export class AllblueService {
           birthDate: submission.birthDate,
           signDate: submission.signDate,
           signatureData: submission.signatureData,
-          doctorName: submission.doctorName,
-          doctorSignatureData: submission.doctorSignatureData,
-          doctorDate: submission.doctorDate,
-          doctorPhone: submission.doctorPhone,
-          doctorAddress: submission.doctorAddress,
-          doctorAddressDetail: submission.doctorAddressDetail,
           checkboxDetailData: submission.checkboxDetailData,
           guardianSignature: submission.guardianSignature,
-          doctorChecks: submission.doctorChecks,
         },
         items,
       },
@@ -231,18 +224,10 @@ export class AllblueService {
   }
 
   async submitSubmission(uuid: string, body: any) {
-    const {
-      checkboxData, checkboxDetailData, birthDate, signDate, signatureData,
-      doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress, doctorAddressDetail,
-      guardianSignature, doctorChecks,
-    } = body;
+    const { checkboxData, checkboxDetailData, birthDate, signDate, signatureData, guardianSignature } = body;
 
-    if (
-      !checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim() ||
-      !doctorName?.trim() || !doctorSignatureData?.trim() || !doctorDate?.trim() ||
-      !doctorPhone?.trim() || !doctorAddress?.trim() || !doctorAddressDetail?.trim()
-    ) {
-      return { success: false, message: '모든 항목을 입력해주세요.' };
+    if (!checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim()) {
+      return { success: false, message: '생년월일, 날짜, 서명을 모두 입력해주세요.' };
     }
 
     const submission = await this.prisma.form_submission.findUnique({ where: { uuid } });
@@ -253,17 +238,13 @@ export class AllblueService {
       return { success: false, message: '이미 제출된 양식입니다.' };
     }
 
-    const [signatureUrl, doctorSignatureUrl] = await Promise.all([
-      this.s3.processSignatureData(signatureData, uuid, 'diver'),
-      this.s3.processSignatureData(doctorSignatureData, uuid, 'doctor'),
-    ]);
+    const signatureUrl = await this.s3.processSignatureData(signatureData, uuid, 'diver');
 
     await this.prisma.form_submission.update({
       where: { uuid },
       data: {
         checkboxData, checkboxDetailData: checkboxDetailData ?? null, birthDate, signDate, signatureData: signatureUrl,
-        doctorName, doctorSignatureData: doctorSignatureUrl, doctorDate, doctorPhone, doctorAddress, doctorAddressDetail,
-        guardianSignature: guardianSignature ?? null, doctorChecks: doctorChecks ?? null,
+        guardianSignature: guardianSignature ?? null,
         status: 'submitted',
       },
     });
