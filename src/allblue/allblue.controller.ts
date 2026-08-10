@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AllblueService } from './allblue.service';
 import { AllblueJwtAuthGuard } from './allblue-jwt-auth.guard';
 
@@ -48,6 +49,12 @@ export class AllblueController {
   @Patch('form/submission/:uuid/print')
   printSubmission(@Param('uuid') uuid: string) {
     return this.allblueService.printSubmission(uuid);
+  }
+
+  @Post('instructorRegisterRequest')
+  @UseInterceptors(FileInterceptor('certImage'))
+  registerRequest(@Body() body: { name: string; phone: string }, @UploadedFile() file: Express.Multer.File) {
+    return this.allblueService.registerRequest(body.name, body.phone, file);
   }
 
   @Post('refreshToken')

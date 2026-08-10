@@ -45,6 +45,19 @@ export class AllblueS3Service {
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
   }
 
+  async uploadFile(buffer: Buffer, key: string, contentType: string): Promise<string | null> {
+    if (!this.s3) return null;
+
+    await this.s3.send(new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+    }));
+
+    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
   async processSignatureData(data: string | undefined, uuid: string, type: 'diver' | 'doctor'): Promise<string | undefined> {
     if (!data) return data;
     if (data.startsWith('http')) return data;
