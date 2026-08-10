@@ -237,6 +237,7 @@ export class AllblueService {
         doctorDate: doctorDate ?? null, doctorPhone: doctorPhone ?? null,
         doctorAddress: doctorAddress ?? null, doctorAddressDetail: doctorAddressDetail ?? null,
         doctorChecks: doctorChecks ?? null,
+        status: 'saved',
       },
     });
 
