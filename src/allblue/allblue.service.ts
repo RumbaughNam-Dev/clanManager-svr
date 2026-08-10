@@ -192,6 +192,13 @@ export class AllblueService {
           signatureData: submission.signatureData,
           checkboxDetailData: submission.checkboxDetailData,
           guardianSignature: submission.guardianSignature,
+          doctorName: submission.doctorName,
+          doctorSignatureData: submission.doctorSignatureData,
+          doctorDate: submission.doctorDate,
+          doctorPhone: submission.doctorPhone,
+          doctorAddress: submission.doctorAddress,
+          doctorAddressDetail: submission.doctorAddressDetail,
+          doctorChecks: submission.doctorChecks,
         },
         items,
       },
@@ -199,7 +206,10 @@ export class AllblueService {
   }
 
   async saveSubmission(uuid: string, body: any) {
-    const { checkboxData, checkboxDetailData, birthDate, signDate, signatureData, guardianSignature } = body;
+    const {
+      checkboxData, checkboxDetailData, birthDate, signDate, signatureData, guardianSignature,
+      doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress, doctorAddressDetail, doctorChecks,
+    } = body;
 
     if (!checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim()) {
       return { success: false, message: '생년월일, 날짜, 서명을 모두 입력해주세요.' };
@@ -213,38 +223,60 @@ export class AllblueService {
       return { success: false, message: '이미 제출된 양식입니다.' };
     }
 
-    const signatureUrl = await this.s3.processSignatureData(signatureData, uuid, 'diver');
-
-    await this.prisma.form_submission.update({
-      where: { uuid },
-      data: { checkboxData, checkboxDetailData: checkboxDetailData ?? null, birthDate, signDate, signatureData: signatureUrl, guardianSignature: guardianSignature ?? null },
-    });
-
-    return { success: true };
-  }
-
-  async submitSubmission(uuid: string, body: any) {
-    const { checkboxData, checkboxDetailData, birthDate, signDate, signatureData, guardianSignature } = body;
-
-    if (!checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim()) {
-      return { success: false, message: '생년월일, 날짜, 서명을 모두 입력해주세요.' };
-    }
-
-    const submission = await this.prisma.form_submission.findUnique({ where: { uuid } });
-    if (!submission) {
-      return { success: false, message: '존재하지 않는 양식입니다' };
-    }
-    if (submission.status === 'submitted') {
-      return { success: false, message: '이미 제출된 양식입니다.' };
-    }
-
-    const signatureUrl = await this.s3.processSignatureData(signatureData, uuid, 'diver');
+    const [signatureUrl, doctorSigUrl] = await Promise.all([
+      this.s3.processSignatureData(signatureData, uuid, 'diver'),
+      this.s3.processSignatureData(doctorSignatureData, uuid, 'doctor'),
+    ]);
 
     await this.prisma.form_submission.update({
       where: { uuid },
       data: {
         checkboxData, checkboxDetailData: checkboxDetailData ?? null, birthDate, signDate, signatureData: signatureUrl,
         guardianSignature: guardianSignature ?? null,
+        doctorName: doctorName ?? null, doctorSignatureData: doctorSigUrl ?? null,
+        doctorDate: doctorDate ?? null, doctorPhone: doctorPhone ?? null,
+        doctorAddress: doctorAddress ?? null, doctorAddressDetail: doctorAddressDetail ?? null,
+        doctorChecks: doctorChecks ?? null,
+      },
+    });
+
+    return { success: true };
+  }
+
+  async submitSubmission(uuid: string, body: any) {
+    const {
+      checkboxData, checkboxDetailData, birthDate, signDate, signatureData, guardianSignature,
+      doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress, doctorAddressDetail, doctorChecks,
+    } = body;
+
+    if (
+      !checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim() ||
+      !doctorName?.trim() || !doctorSignatureData?.trim() || !doctorDate?.trim() ||
+      !doctorPhone?.trim() || !doctorAddress?.trim() || !doctorAddressDetail?.trim()
+    ) {
+      return { success: false, message: '모든 항목을 입력해주세요.' };
+    }
+
+    const submission = await this.prisma.form_submission.findUnique({ where: { uuid } });
+    if (!submission) {
+      return { success: false, message: '존재하지 않는 양식입니다' };
+    }
+    if (submission.status === 'submitted') {
+      return { success: false, message: '이미 제출된 양식입니다.' };
+    }
+
+    const [signatureUrl, doctorSigUrl] = await Promise.all([
+      this.s3.processSignatureData(signatureData, uuid, 'diver'),
+      this.s3.processSignatureData(doctorSignatureData, uuid, 'doctor'),
+    ]);
+
+    await this.prisma.form_submission.update({
+      where: { uuid },
+      data: {
+        checkboxData, checkboxDetailData: checkboxDetailData ?? null, birthDate, signDate, signatureData: signatureUrl,
+        guardianSignature: guardianSignature ?? null,
+        doctorName, doctorSignatureData: doctorSigUrl, doctorDate, doctorPhone, doctorAddress, doctorAddressDetail,
+        doctorChecks: doctorChecks ?? null,
         status: 'submitted',
       },
     });

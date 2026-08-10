@@ -65,6 +65,13 @@ model form_submission {
   signDate           String?  @db.VarChar(20)
   signatureData      String?  @db.VarChar(500)
   guardianSignature   String?  @db.VarChar(100)
+  doctorName          String?  @db.VarChar(100)
+  doctorSignatureData String?  @db.VarChar(500)
+  doctorDate          String?  @db.VarChar(20)
+  doctorPhone         String?  @db.VarChar(30)
+  doctorAddress       String?  @db.VarChar(255)
+  doctorAddressDetail String?  @db.VarChar(255)
+  doctorChecks        Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
