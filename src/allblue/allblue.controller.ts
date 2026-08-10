@@ -31,6 +31,12 @@ export class AllblueController {
     return this.allblueService.createSubmission(body.formId, body.diverName, Number(req.user.sub));
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('form/submissions')
+  getSubmissions(@Req() req: any) {
+    return this.allblueService.getSubmissions(Number(req.user.sub));
+  }
+
   @Get('form/submission/:uuid')
   getSubmission(@Param('uuid') uuid: string) {
     return this.allblueService.getSubmission(uuid);

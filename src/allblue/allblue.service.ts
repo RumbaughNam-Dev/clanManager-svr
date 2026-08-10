@@ -153,6 +153,15 @@ export class AllblueService {
     };
   }
 
+  async getSubmissions(instructorId: number) {
+    const submissions = await this.prisma.form_submission.findMany({
+      where: { instructorId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, uuid: true, formId: true, diverName: true, status: true, createdAt: true },
+    });
+    return { success: true, data: submissions };
+  }
+
   async getSubmission(uuid: string) {
     const submission = await this.prisma.form_submission.findUnique({
       where: { uuid },
