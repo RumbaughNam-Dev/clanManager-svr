@@ -159,7 +159,10 @@ export class AllblueService {
       orderBy: { createdAt: 'desc' },
       select: { id: true, uuid: true, formId: true, diverName: true, status: true, createdAt: true },
     });
-    return { success: true, data: submissions };
+    return {
+      success: true,
+      data: submissions.map(s => ({ ...s, createdAt: s.createdAt.toISOString() })),
+    };
   }
 
   async getSubmission(uuid: string) {
