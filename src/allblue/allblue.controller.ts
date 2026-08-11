@@ -85,8 +85,10 @@ export class AllblueController {
   }
 
   @Get('auth/kakao/callback')
-  kakaoCallback(@Query('code') code: string, @Req() req: any, @Res() res: any) {
-    return res.redirect(302, `allblue://kakao-callback?code=${code}`);
+  kakaoCallback(@Query('code') code: string, @Res() res: any) {
+    res.type('html').send(
+      `<html><body><script>window.location.href="allblue://kakao-callback?code=${encodeURIComponent(code)}";</script><p>앱으로 이동 중...</p></body></html>`,
+    );
   }
 
   @Post('auth/register')
