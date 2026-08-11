@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AllblueService } from './allblue.service';
 import { AllblueJwtAuthGuard } from './allblue-jwt-auth.guard';
@@ -61,6 +61,27 @@ export class AllblueController {
   @UseInterceptors(FileInterceptor('certImage'))
   registerRequest(@Body() body: { name: string; phone: string }, @UploadedFile() file: Express.Multer.File) {
     return this.allblueService.registerRequest(body.name, body.phone, file);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('admin/registerRequests')
+  getRegisterRequests(@Req() req: any) {
+    if (req.user.userId !== 'expoool') throw new ForbiddenException();
+    return this.allblueService.getRegisterRequests();
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('admin/registerRequests/:id/approve')
+  approveRegisterRequest(@Param('id') id: string, @Req() req: any) {
+    if (req.user.userId !== 'expoool') throw new ForbiddenException();
+    return this.allblueService.updateRegisterRequestStatus(Number(id), 'approved');
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('admin/registerRequests/:id/reject')
+  rejectRegisterRequest(@Param('id') id: string, @Req() req: any) {
+    if (req.user.userId !== 'expoool') throw new ForbiddenException();
+    return this.allblueService.updateRegisterRequestStatus(Number(id), 'rejected');
   }
 
   @Post('refreshToken')

@@ -340,6 +340,24 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getRegisterRequests() {
+    const requests = await this.prisma.instructor_register_request.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return {
+      success: true,
+      data: requests.map(r => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() })),
+    };
+  }
+
+  async updateRegisterRequestStatus(id: number, status: string) {
+    await this.prisma.instructor_register_request.update({
+      where: { id },
+      data: { status },
+    });
+    return { success: true };
+  }
+
   async logout(sub: string) {
     await this.prisma.user.update({
       where: { id: Number(sub) },
