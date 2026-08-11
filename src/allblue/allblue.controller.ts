@@ -84,6 +84,13 @@ export class AllblueController {
     return this.allblueService.updateRegisterRequestStatus(Number(id), 'rejected');
   }
 
+  @Post('auth/register')
+  authRegister(@Body() body: any, @Req() req: any) {
+    const authHeader = req.headers['authorization'];
+    const tempToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+    return this.allblueService.authRegister(tempToken, body);
+  }
+
   @Post('auth/kakao')
   kakaoAuth(@Body() body: { code: string; redirectUri: string }) {
     return this.allblueService.kakaoAuth(body.code, body.redirectUri);

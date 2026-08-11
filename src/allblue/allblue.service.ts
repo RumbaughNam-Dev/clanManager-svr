@@ -373,6 +373,72 @@ export class AllblueService {
     return { success: true };
   }
 
+  async authRegister(tempToken: string | null, body: any) {
+    if (!tempToken) {
+      return { error: 'UNAUTHORIZED', message: '임시 토큰이 필요합니다.' };
+    }
+
+    // 1. tempToken 검증
+    let decoded: any;
+    try {
+      decoded = jwt.verify(tempToken, this.jwtSecret);
+    } catch {
+      return { error: 'TOKEN_EXPIRED', message: '임시 토큰이 만료되었습니다. 다시 로그인해주세요.' };
+    }
+
+    if (decoded.type !== 'temp_signup') {
+      return { error: 'INVALID_TOKEN', message: '유효하지 않은 토큰입니다.' };
+    }
+
+    // 2. 유효성 검증
+    const { name, birthDate, phone, kakaoTalkId, instagramId } = body;
+
+    if (!name?.trim()) {
+      return { error: 'VALIDATION_ERROR', message: '이름을 입력해주세요.' };
+    }
+    if (!birthDate?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate.trim())) {
+      return { error: 'VALIDATION_ERROR', message: '생년월일을 YYYY-MM-DD 형식으로 입력해주세요.' };
+    }
+    if (!phone?.trim() && !kakaoTalkId?.trim() && !instagramId?.trim()) {
+      return { error: 'VALIDATION_ERROR', message: '연락처 정보를 최소 1개 입력해주세요.' };
+    }
+
+    // 3. DB에 유저 생성
+    const randomPassword = await bcrypt.hash(randomUUID(), 10);
+    const user = await this.prisma.user.create({
+      data: {
+        userId: `kakao_${decoded.kakaoId}`,
+        password: randomPassword,
+        userName: name.trim(),
+        email: decoded.email,
+        phone: phone?.trim() || null,
+        kakaoId: decoded.kakaoId,
+        profileImage: decoded.profileImage,
+        birthDate: birthDate.trim(),
+        kakaoTalkId: kakaoTalkId?.trim() || null,
+        instagramId: instagramId?.trim() || null,
+        userType: 'user',
+        status: 'approved',
+      },
+    });
+
+    // 4. 정식 JWT 토큰 발급
+    const token = jwt.sign(
+      { sub: String(user.id), userId: user.userId, userType: user.userType },
+      this.jwtSecret as Secret,
+      { expiresIn: '7d' as unknown as SignOptions['expiresIn'] },
+    );
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        name: user.userName,
+        profileImage: user.profileImage,
+      },
+    };
+  }
+
   async kakaoAuth(code: string, redirectUri: string) {
     if (!code || !redirectUri) {
       return { success: false, message: '인증코드와 redirectUri는 필수입니다.' };
