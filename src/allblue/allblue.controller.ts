@@ -57,10 +57,10 @@ export class AllblueController {
     return this.allblueService.printSubmission(uuid);
   }
 
-  @Post('instructorRegisterRequest')
+  @Post('registerRequest')
   @UseInterceptors(FileInterceptor('certImage'))
-  registerRequest(@Body() body: { name: string; phone: string }, @UploadedFile() file: Express.Multer.File) {
-    return this.allblueService.registerRequest(body.name, body.phone, file);
+  registerRequest(@Body() body: any, @UploadedFile() file: Express.Multer.File) {
+    return this.allblueService.registerRequest(body, file);
   }
 
   @UseGuards(AllblueJwtAuthGuard)

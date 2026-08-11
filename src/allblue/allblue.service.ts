@@ -318,23 +318,38 @@ export class AllblueService {
     return { success: true };
   }
 
-  async registerRequest(name: string, phone: string, file: Express.Multer.File) {
-    if (!name?.trim() || !phone?.trim()) {
-      return { success: false, message: '이름과 전화번호를 입력해주세요.' };
+  async registerRequest(body: any, file: Express.Multer.File) {
+    const { userId, name, phone, kakaoId, instaId, isInstructor } = body;
+
+    if (!userId?.trim() || userId.trim().length < 4) {
+      return { success: false, message: '아이디는 4자 이상 입력해주세요.' };
     }
-    if (!file) {
+    if (!name?.trim()) {
+      return { success: false, message: '이름을 입력해주세요.' };
+    }
+    if (isInstructor === '1' && !file) {
       return { success: false, message: '자격증 이미지를 첨부해주세요.' };
     }
 
-    const key = `instructor-certs/${Date.now()}_${file.originalname}`;
-    let certImageUrl = await this.s3.uploadFile(file.buffer, key, file.mimetype);
-
-    if (!certImageUrl) {
-      certImageUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    let certImageUrl: string | null = null;
+    if (file) {
+      const key = `instructor-certs/${Date.now()}_${file.originalname}`;
+      certImageUrl = await this.s3.uploadFile(file.buffer, key, file.mimetype);
+      if (!certImageUrl) {
+        certImageUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+      }
     }
 
     await this.prisma.instructor_register_request.create({
-      data: { name: name.trim(), phone: phone.trim(), certImageUrl },
+      data: {
+        userId: userId.trim(),
+        name: name.trim(),
+        phone: phone?.trim() || null,
+        kakaoId: kakaoId?.trim() || null,
+        instaId: instaId?.trim() || null,
+        isInstructor: isInstructor === '1' ? '1' : '0',
+        certImageUrl,
+      },
     });
 
     return { success: true };

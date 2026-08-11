@@ -80,9 +80,13 @@ model form_submission {
 
 model instructor_register_request {
   id           Int      @id @default(autoincrement())
+  userId       String   @db.VarChar(50)
   name         String   @db.VarChar(50)
-  phone        String   @db.VarChar(20)
-  certImageUrl String   @db.VarChar(500)
+  phone        String?  @db.VarChar(20)
+  kakaoId      String?  @db.VarChar(50)
+  instaId      String?  @db.VarChar(50)
+  isInstructor String   @default("0") @db.VarChar(1)
+  certImageUrl String?  @db.VarChar(500)
   status       String   @default("pending") @db.VarChar(20)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
