@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AllblueService } from './allblue.service';
 import { AllblueJwtAuthGuard } from './allblue-jwt-auth.guard';
@@ -82,6 +82,11 @@ export class AllblueController {
   rejectRegisterRequest(@Param('id') id: string, @Req() req: any) {
     if (req.user.userId !== 'expoool') throw new ForbiddenException();
     return this.allblueService.updateRegisterRequestStatus(Number(id), 'rejected');
+  }
+
+  @Get('auth/kakao/callback')
+  kakaoCallback(@Query('code') code: string, @Req() req: any, @Res() res: any) {
+    return res.redirect(302, `allblue://kakao-callback?code=${code}`);
   }
 
   @Post('auth/register')
