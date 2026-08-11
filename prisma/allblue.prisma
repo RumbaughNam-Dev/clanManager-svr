@@ -17,6 +17,8 @@ model user {
   phone        String?         @db.VarChar(20)
   userType     String          @default("instructor") @db.VarChar(20)
   status       String          @default("pending") @db.VarChar(20)
+  kakaoId      String?         @unique @db.VarChar(50)
+  profileImage String?         @db.VarChar(500)
   smbAddress   String?         @db.VarChar(255)
   smbAccount   String?         @db.VarChar(100)
   smbPassword  String?         @db.VarChar(255)

@@ -84,6 +84,11 @@ export class AllblueController {
     return this.allblueService.updateRegisterRequestStatus(Number(id), 'rejected');
   }
 
+  @Post('auth/kakao')
+  kakaoAuth(@Body() body: { code: string; redirectUri: string }) {
+    return this.allblueService.kakaoAuth(body.code, body.redirectUri);
+  }
+
   @Post('refreshToken')
   refreshToken(@Body() body: { refreshToken: string }) {
     return this.allblueService.refreshToken(body.refreshToken);

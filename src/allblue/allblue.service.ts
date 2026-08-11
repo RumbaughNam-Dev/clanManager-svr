@@ -373,6 +373,84 @@ export class AllblueService {
     return { success: true };
   }
 
+  async kakaoAuth(code: string, redirectUri: string) {
+    if (!code || !redirectUri) {
+      return { success: false, message: '인증코드와 redirectUri는 필수입니다.' };
+    }
+
+    const kakaoClientId = this.config.get<string>('KAKAO_CLIENT_ID', '');
+
+    // 1. 카카오 토큰 교환
+    const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: kakaoClientId,
+        redirect_uri: redirectUri,
+        code,
+      }),
+    });
+    const tokenData = await tokenRes.json() as any;
+
+    if (!tokenData.access_token) {
+      return { success: false, message: '카카오 인증에 실패했습니다.' };
+    }
+
+    // 2. 카카오 사용자 정보 조회
+    const userRes = await fetch('https://kapi.kakao.com/v2/user/me', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const kakaoUser = await userRes.json() as any;
+
+    const kakaoId = String(kakaoUser.id);
+    const email = kakaoUser.kakao_account?.email ?? null;
+    const nickname = kakaoUser.kakao_account?.profile?.nickname ?? null;
+    const profileImage = kakaoUser.kakao_account?.profile?.profile_image_url ?? null;
+
+    // 3. DB에서 kakaoId로 유저 검색
+    const existingUser = await this.prisma.user.findUnique({
+      where: { kakaoId },
+    });
+
+    if (existingUser) {
+      // 기존 회원
+      const token = jwt.sign(
+        { sub: String(existingUser.id), userId: existingUser.userId, userType: existingUser.userType },
+        this.jwtSecret as Secret,
+        { expiresIn: '7d' as unknown as SignOptions['expiresIn'] },
+      );
+
+      return {
+        isNewUser: false,
+        token,
+        user: {
+          id: existingUser.id,
+          name: existingUser.userName,
+          profileImage: existingUser.profileImage,
+        },
+      };
+    }
+
+    // 신규 회원 — 임시 토큰 발급
+    const tempToken = jwt.sign(
+      { kakaoId, email, nickname, profileImage, type: 'temp_signup' },
+      this.jwtSecret as Secret,
+      { expiresIn: '30m' as unknown as SignOptions['expiresIn'] },
+    );
+
+    return {
+      isNewUser: true,
+      tempToken,
+      kakaoUser: {
+        kakaoId,
+        email,
+        nickname,
+        profileImage,
+      },
+    };
+  }
+
   async logout(sub: string) {
     await this.prisma.user.update({
       where: { id: Number(sub) },
