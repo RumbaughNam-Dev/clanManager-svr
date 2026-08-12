@@ -439,12 +439,13 @@ export class AllblueService {
     };
   }
 
-  async kakaoAuth(code: string, redirectUri: string) {
-    if (!code || !redirectUri) {
-      return { success: false, message: '인증코드와 redirectUri는 필수입니다.' };
+  async kakaoAuthCallback(code: string) {
+    if (!code) {
+      return { error: true, message: '인증코드가 없습니다.' };
     }
 
     const kakaoClientId = this.config.get<string>('KAKAO_CLIENT_ID', '');
+    const redirectUri = this.config.get<string>('KAKAO_REDIRECT_URI', 'https://api.rumbaugh.co.kr/allblue/auth/kakao/callback');
 
     // 1. 카카오 토큰 교환
     const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
@@ -460,7 +461,7 @@ export class AllblueService {
     const tokenData = await tokenRes.json() as any;
 
     if (!tokenData.access_token) {
-      return { success: false, message: '카카오 인증에 실패했습니다.' };
+      return { error: true, message: '카카오 인증에 실패했습니다.' };
     }
 
     // 2. 카카오 사용자 정보 조회
@@ -480,7 +481,6 @@ export class AllblueService {
     });
 
     if (existingUser) {
-      // 기존 회원
       const token = jwt.sign(
         { sub: String(existingUser.id), userId: existingUser.userId, userType: existingUser.userType },
         this.jwtSecret as Secret,
@@ -490,11 +490,8 @@ export class AllblueService {
       return {
         isNewUser: false,
         token,
-        user: {
-          id: existingUser.id,
-          name: existingUser.userName,
-          profileImage: existingUser.profileImage,
-        },
+        userId: existingUser.userId,
+        name: existingUser.userName,
       };
     }
 
@@ -508,12 +505,7 @@ export class AllblueService {
     return {
       isNewUser: true,
       tempToken,
-      kakaoUser: {
-        kakaoId,
-        email,
-        nickname,
-        profileImage,
-      },
+      nickname,
     };
   }
 

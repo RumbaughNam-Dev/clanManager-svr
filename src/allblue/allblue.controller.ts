@@ -85,8 +85,18 @@ export class AllblueController {
   }
 
   @Get('auth/kakao/callback')
-  kakaoCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
-    const redirectUrl = `${state}?code=${encodeURIComponent(code)}`;
+  async kakaoCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
+    const result = await this.allblueService.kakaoAuthCallback(code);
+    let redirectUrl: string;
+
+    if (result.error) {
+      redirectUrl = `${state}?error=${encodeURIComponent(result.message)}`;
+    } else if (result.isNewUser) {
+      redirectUrl = `${state}?isNewUser=true&tempToken=${encodeURIComponent(result.tempToken ?? '')}&nickname=${encodeURIComponent(result.nickname ?? '')}`;
+    } else {
+      redirectUrl = `${state}?isNewUser=false&token=${encodeURIComponent(result.token ?? '')}&userId=${encodeURIComponent(result.userId ?? '')}&name=${encodeURIComponent(result.name ?? '')}`;
+    }
+
     res.type('html').send(
       `<html><body><script>window.location.href="${redirectUrl}";</script><p>앱으로 이동 중...</p></body></html>`,
     );
@@ -97,11 +107,6 @@ export class AllblueController {
     const authHeader = req.headers['authorization'];
     const tempToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
     return this.allblueService.authRegister(tempToken, body);
-  }
-
-  @Post('auth/kakao')
-  kakaoAuth(@Body() body: { code: string; redirectUri: string }) {
-    return this.allblueService.kakaoAuth(body.code, body.redirectUri);
   }
 
   @Post('refreshToken')
