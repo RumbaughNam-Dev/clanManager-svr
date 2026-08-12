@@ -444,7 +444,7 @@ export class AllblueService {
       return { error: true, message: '인증코드가 없습니다.' };
     }
 
-    const kakaoClientId = this.config.get<string>('KAKAO_CLIENT_ID', '');
+    const kakaoClientId = this.config.get<string>('KAKAO_CLIENT_ID', 'b1b8a86fb3380ff331b52d75cb63ce82');
     const redirectUri = this.config.get<string>('KAKAO_REDIRECT_URI', 'https://api.rumbaugh.co.kr/allblue/auth/kakao/callback');
 
     // 1. 카카오 토큰 교환
