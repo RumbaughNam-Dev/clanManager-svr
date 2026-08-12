@@ -445,6 +445,7 @@ export class AllblueService {
     }
 
     const kakaoClientId = this.config.get<string>('KAKAO_CLIENT_ID', 'b1b8a86fb3380ff331b52d75cb63ce82');
+    const kakaoClientSecret = this.config.get<string>('KAKAO_CLIENT_SECRET', 'Kv7Nv9gKjmxjTN5a6Lhy4UBp3zSzNuzV');
     const redirectUri = this.config.get<string>('KAKAO_REDIRECT_URI', 'https://api.rumbaugh.co.kr/allblue/auth/kakao/callback');
 
     // 1. 카카오 토큰 교환
@@ -454,6 +455,7 @@ export class AllblueService {
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         client_id: kakaoClientId,
+        client_secret: kakaoClientSecret,
         redirect_uri: redirectUri,
         code,
       }),
