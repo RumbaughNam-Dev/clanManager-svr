@@ -396,23 +396,46 @@ export class AllblueService {
     if (!name?.trim()) {
       return { error: 'VALIDATION_ERROR', message: '이름을 입력해주세요.' };
     }
-    if (!birthDate?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate.trim())) {
-      return { error: 'VALIDATION_ERROR', message: '생년월일을 YYYY-MM-DD 형식으로 입력해주세요.' };
+
+    // birthDate 검증
+    if (!birthDate?.trim()) {
+      return { error: 'VALIDATION_ERROR', message: '생년월일을 입력해주세요.' };
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate.trim())) {
+      return { error: 'VALIDATION_ERROR', message: '생년월일 형식이 올바르지 않습니다.' };
+    }
+    const [y, m, d] = birthDate.trim().split('-').map(Number);
+    const birthDateObj = new Date(y, m - 1, d);
+    if (birthDateObj.getFullYear() !== y || birthDateObj.getMonth() !== m - 1 || birthDateObj.getDate() !== d) {
+      return { error: 'VALIDATION_ERROR', message: '존재하지 않는 날짜입니다.' };
+    }
+    const currentYear = new Date().getFullYear();
+    if (y < 1900 || y > currentYear) {
+      return { error: 'VALIDATION_ERROR', message: '생년월일이 올바르지 않습니다.' };
+    }
+
+    // phone 검증
+    if (phone?.trim() && !/^\d{10,11}$/.test(phone.trim())) {
+      return { error: 'VALIDATION_ERROR', message: '전화번호는 숫자 10~11자리로 입력해주세요.' };
+    }
+
     if (!phone?.trim() && !kakaoTalkId?.trim() && !instagramId?.trim()) {
       return { error: 'VALIDATION_ERROR', message: '연락처 정보를 최소 1개 입력해주세요.' };
     }
 
     // 3. DB에 유저 생성
+    const isGoogle = !!decoded.googleId;
+    const socialId = decoded.kakaoId ?? decoded.googleId;
     const randomPassword = await bcrypt.hash(randomUUID(), 10);
     const user = await this.prisma.user.create({
       data: {
-        userId: `kakao_${decoded.kakaoId}`,
+        userId: `${isGoogle ? 'google' : 'kakao'}_${socialId}`,
         password: randomPassword,
         userName: name.trim(),
         email: decoded.email,
         phone: phone?.trim() || null,
-        kakaoId: decoded.kakaoId,
+        kakaoId: decoded.kakaoId ?? null,
+        googleId: decoded.googleId ?? null,
         profileImage: decoded.profileImage,
         birthDate: birthDate.trim(),
         kakaoTalkId: kakaoTalkId?.trim() || null,
@@ -494,6 +517,7 @@ export class AllblueService {
         token,
         userId: existingUser.userId,
         name: existingUser.userName,
+        profileImage: existingUser.profileImage,
       };
     }
 
@@ -508,6 +532,81 @@ export class AllblueService {
       isNewUser: true,
       tempToken,
       nickname,
+      profileImage,
+    };
+  }
+
+  async googleAuthCallback(code: string) {
+    if (!code) {
+      return { error: true, message: '인증코드가 없습니다.' };
+    }
+
+    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID', '');
+    const clientSecret = this.config.get<string>('GOOGLE_CLIENT_SECRET', '');
+    const redirectUri = this.config.get<string>('GOOGLE_REDIRECT_URI', 'https://api.rumbaugh.co.kr/allblue/auth/google/callback');
+
+    // 1. 구글 토큰 교환
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        code,
+      }),
+    });
+    const tokenData = await tokenRes.json() as any;
+
+    if (!tokenData.access_token) {
+      return { error: true, message: '구글 인증에 실패했습니다.' };
+    }
+
+    // 2. 구글 사용자 정보 조회
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const googleUser = await userRes.json() as any;
+
+    const googleId = String(googleUser.id);
+    const email = googleUser.email ?? null;
+    const nickname = googleUser.name ?? null;
+    const profileImage = googleUser.picture ?? null;
+
+    // 3. DB에서 googleId로 유저 검색
+    const existingUser = await this.prisma.user.findUnique({
+      where: { googleId },
+    });
+
+    if (existingUser) {
+      const token = jwt.sign(
+        { sub: String(existingUser.id), userId: existingUser.userId, userType: existingUser.userType },
+        this.jwtSecret as Secret,
+        { expiresIn: '7d' as unknown as SignOptions['expiresIn'] },
+      );
+
+      return {
+        isNewUser: false,
+        token,
+        userId: existingUser.userId,
+        name: existingUser.userName,
+        profileImage: existingUser.profileImage,
+      };
+    }
+
+    // 신규 회원 — 임시 토큰 발급
+    const tempToken = jwt.sign(
+      { googleId, email, nickname, profileImage, type: 'temp_signup' },
+      this.jwtSecret as Secret,
+      { expiresIn: '30m' as unknown as SignOptions['expiresIn'] },
+    );
+
+    return {
+      isNewUser: true,
+      tempToken,
+      nickname,
+      profileImage,
     };
   }
 

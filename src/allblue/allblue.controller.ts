@@ -92,9 +92,27 @@ export class AllblueController {
     if (result.error) {
       redirectUrl = `${state}?error=${encodeURIComponent(result.message)}`;
     } else if (result.isNewUser) {
-      redirectUrl = `${state}?isNewUser=true&tempToken=${encodeURIComponent(result.tempToken ?? '')}&nickname=${encodeURIComponent(result.nickname ?? '')}`;
+      redirectUrl = `${state}?isNewUser=true&tempToken=${encodeURIComponent(result.tempToken ?? '')}&nickname=${encodeURIComponent(result.nickname ?? '')}&profileImage=${encodeURIComponent(result.profileImage ?? '')}`;
     } else {
-      redirectUrl = `${state}?isNewUser=false&token=${encodeURIComponent(result.token ?? '')}&userId=${encodeURIComponent(result.userId ?? '')}&name=${encodeURIComponent(result.name ?? '')}`;
+      redirectUrl = `${state}?isNewUser=false&token=${encodeURIComponent(result.token ?? '')}&userId=${encodeURIComponent(result.userId ?? '')}&name=${encodeURIComponent(result.name ?? '')}&profileImage=${encodeURIComponent(result.profileImage ?? '')}`;
+    }
+
+    res.type('html').send(
+      `<html><body><script>window.location.href="${redirectUrl}";</script><p>앱으로 이동 중...</p></body></html>`,
+    );
+  }
+
+  @Get('auth/google/callback')
+  async googleCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
+    const result = await this.allblueService.googleAuthCallback(code);
+    let redirectUrl: string;
+
+    if (result.error) {
+      redirectUrl = `${state}?error=${encodeURIComponent(result.message)}`;
+    } else if (result.isNewUser) {
+      redirectUrl = `${state}?isNewUser=true&tempToken=${encodeURIComponent(result.tempToken ?? '')}&nickname=${encodeURIComponent(result.nickname ?? '')}&profileImage=${encodeURIComponent(result.profileImage ?? '')}`;
+    } else {
+      redirectUrl = `${state}?isNewUser=false&token=${encodeURIComponent(result.token ?? '')}&userId=${encodeURIComponent(result.userId ?? '')}&name=${encodeURIComponent(result.name ?? '')}&profileImage=${encodeURIComponent(result.profileImage ?? '')}`;
     }
 
     res.type('html').send(
