@@ -546,6 +546,11 @@ export class AllblueService {
     const redirectUri = this.config.get<string>('GOOGLE_REDIRECT_URI', 'https://api.rumbaugh.co.kr/allblue/auth/google/callback');
 
     // 1. 구글 토큰 교환
+    console.log('[구글] 토큰 교환 요청:', {
+      code: code?.substring(0, 20) + '...',
+      redirect_uri: redirectUri,
+      client_id: clientId,
+    });
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -558,6 +563,7 @@ export class AllblueService {
       }),
     });
     const tokenData = await tokenRes.json() as any;
+    console.log('[구글] 토큰 교환 응답:', JSON.stringify(tokenData));
 
     if (!tokenData.access_token) {
       return { error: true, message: '구글 인증에 실패했습니다.' };
@@ -568,6 +574,7 @@ export class AllblueService {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
     const googleUser = await userRes.json() as any;
+    console.log('[구글] 유저 정보:', JSON.stringify(googleUser));
 
     const googleId = String(googleUser.id);
     const email = googleUser.email ?? null;
