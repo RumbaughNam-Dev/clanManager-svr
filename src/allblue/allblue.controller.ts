@@ -138,6 +138,25 @@ export class AllblueController {
     );
   }
 
+  @Post('auth/apple/callback')
+  async appleCallback(@Body() body: any, @Res() res: any) {
+    const { code, state, user } = body;
+    const result = await this.allblueService.appleAuthCallback(code, user);
+    let redirectUrl: string;
+
+    if (result.error) {
+      redirectUrl = `${state}?error=${encodeURIComponent(result.message)}`;
+    } else if (result.isNewUser) {
+      redirectUrl = `${state}?isNewUser=true&tempToken=${encodeURIComponent(result.tempToken ?? '')}&nickname=${encodeURIComponent(result.nickname ?? '')}`;
+    } else {
+      redirectUrl = `${state}?isNewUser=false&token=${encodeURIComponent(result.token ?? '')}&userId=${encodeURIComponent(result.userId ?? '')}&name=${encodeURIComponent(result.name ?? '')}`;
+    }
+
+    res.type('html').send(
+      `<html><body><script>window.location.href="${redirectUrl}";</script><p>앱으로 이동 중...</p></body></html>`,
+    );
+  }
+
   @Post('auth/register')
   authRegister(@Body() body: any, @Req() req: any) {
     const authHeader = req.headers['authorization'];

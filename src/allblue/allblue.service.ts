@@ -5,6 +5,8 @@ import * as bcrypt from 'bcrypt';
 import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import { AllblueS3Service } from './allblue-s3.service';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class AllblueService {
@@ -424,8 +426,8 @@ export class AllblueService {
     }
 
     // 3. DB에 유저 생성
-    const provider = decoded.kakaoId ? 'kakao' : decoded.googleId ? 'google' : 'naver';
-    const socialId = decoded.kakaoId ?? decoded.googleId ?? decoded.naverId;
+    const provider = decoded.kakaoId ? 'kakao' : decoded.googleId ? 'google' : decoded.naverId ? 'naver' : 'apple';
+    const socialId = decoded.kakaoId ?? decoded.googleId ?? decoded.naverId ?? decoded.appleId;
     const randomPassword = await bcrypt.hash(randomUUID(), 10);
     const user = await this.prisma.user.create({
       data: {
@@ -437,6 +439,7 @@ export class AllblueService {
         kakaoId: decoded.kakaoId ?? null,
         googleId: decoded.googleId ?? null,
         naverId: decoded.naverId ?? null,
+        appleId: decoded.appleId ?? null,
         profileImage: decoded.profileImage,
         birthDate: birthDate.trim(),
         kakaoTalkId: kakaoTalkId?.trim() || null,
@@ -689,6 +692,99 @@ export class AllblueService {
       tempToken,
       nickname,
       profileImage,
+    };
+  }
+
+  private generateAppleClientSecret(): string {
+    const teamId = this.config.get<string>('APPLE_TEAM_ID', 'CHDRTR39G7');
+    const keyId = this.config.get<string>('APPLE_KEY_ID', 'V836FM9R4N');
+    const clientId = this.config.get<string>('APPLE_CLIENT_ID', 'com.rumbaugh.allblue.service');
+    const keyPath = this.config.get<string>('APPLE_PRIVATE_KEY_PATH', path.join(process.cwd(), 'keys', 'AuthKey_V836FM9R4N.p8'));
+
+    const privateKey = fs.readFileSync(keyPath, 'utf8');
+    const now = Math.floor(Date.now() / 1000);
+
+    return jwt.sign(
+      { iss: teamId, iat: now, exp: now + 600, aud: 'https://appleid.apple.com', sub: clientId },
+      privateKey,
+      { algorithm: 'ES256', header: { alg: 'ES256', kid: keyId } } as any,
+    );
+  }
+
+  async appleAuthCallback(code: string, userParam?: string) {
+    if (!code) {
+      return { error: true, message: '인증코드가 없습니다.' };
+    }
+
+    const clientId = this.config.get<string>('APPLE_CLIENT_ID', 'com.rumbaugh.allblue.service');
+    const redirectUri = this.config.get<string>('APPLE_REDIRECT_URI', 'https://api.rumbaugh.co.kr/allblue/auth/apple/callback');
+    const clientSecret = this.generateAppleClientSecret();
+
+    // 1. 애플 토큰 교환
+    const tokenRes = await fetch('https://appleid.apple.com/auth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        redirect_uri: redirectUri,
+      }),
+    });
+    const tokenData = await tokenRes.json() as any;
+
+    if (!tokenData.id_token) {
+      return { error: true, message: '애플 인증에 실패했습니다.' };
+    }
+
+    // 2. id_token 디코드
+    const decoded = jwt.decode(tokenData.id_token) as any;
+    const appleId = decoded.sub;
+    const email = decoded.email ?? null;
+
+    // 3. user 파라미터에서 이름 추출 (최초 로그인 시에만)
+    let nickname: string | null = null;
+    if (userParam) {
+      try {
+        const userInfo = typeof userParam === 'string' ? JSON.parse(userParam) : userParam;
+        const firstName = userInfo?.name?.firstName ?? '';
+        const lastName = userInfo?.name?.lastName ?? '';
+        nickname = `${lastName}${firstName}`.trim() || null;
+      } catch {}
+    }
+
+    // 4. DB에서 appleId로 유저 검색
+    const existingUser = await this.prisma.user.findUnique({
+      where: { appleId },
+    });
+
+    if (existingUser) {
+      const token = jwt.sign(
+        { sub: String(existingUser.id), userId: existingUser.userId, userType: existingUser.userType },
+        this.jwtSecret as Secret,
+        { expiresIn: '7d' as unknown as SignOptions['expiresIn'] },
+      );
+
+      return {
+        isNewUser: false,
+        token,
+        userId: existingUser.userId,
+        name: existingUser.userName,
+      };
+    }
+
+    // 신규 회원 — 임시 토큰 발급
+    const tempToken = jwt.sign(
+      { appleId, email, nickname, type: 'temp_signup' },
+      this.jwtSecret as Secret,
+      { expiresIn: '30m' as unknown as SignOptions['expiresIn'] },
+    );
+
+    return {
+      isNewUser: true,
+      tempToken,
+      nickname,
     };
   }
 
