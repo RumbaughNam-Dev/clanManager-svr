@@ -424,18 +424,19 @@ export class AllblueService {
     }
 
     // 3. DB에 유저 생성
-    const isGoogle = !!decoded.googleId;
-    const socialId = decoded.kakaoId ?? decoded.googleId;
+    const provider = decoded.kakaoId ? 'kakao' : decoded.googleId ? 'google' : 'naver';
+    const socialId = decoded.kakaoId ?? decoded.googleId ?? decoded.naverId;
     const randomPassword = await bcrypt.hash(randomUUID(), 10);
     const user = await this.prisma.user.create({
       data: {
-        userId: `${isGoogle ? 'google' : 'kakao'}_${socialId}`,
+        userId: `${provider}_${socialId}`,
         password: randomPassword,
         userName: name.trim(),
         email: decoded.email,
         phone: phone?.trim() || null,
         kakaoId: decoded.kakaoId ?? null,
         googleId: decoded.googleId ?? null,
+        naverId: decoded.naverId ?? null,
         profileImage: decoded.profileImage,
         birthDate: birthDate.trim(),
         kakaoTalkId: kakaoTalkId?.trim() || null,
@@ -605,6 +606,80 @@ export class AllblueService {
     // 신규 회원 — 임시 토큰 발급
     const tempToken = jwt.sign(
       { googleId, email, nickname, profileImage, type: 'temp_signup' },
+      this.jwtSecret as Secret,
+      { expiresIn: '30m' as unknown as SignOptions['expiresIn'] },
+    );
+
+    return {
+      isNewUser: true,
+      tempToken,
+      nickname,
+      profileImage,
+    };
+  }
+
+  async naverAuthCallback(code: string, state: string) {
+    if (!code) {
+      return { error: true, message: '인증코드가 없습니다.' };
+    }
+
+    const clientId = this.config.get<string>('NAVER_CLIENT_ID', '');
+    const clientSecret = this.config.get<string>('NAVER_CLIENT_SECRET', '');
+
+    // 1. 네이버 토큰 교환
+    const tokenRes = await fetch('https://nid.naver.com/oauth2.0/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        state,
+      }),
+    });
+    const tokenData = await tokenRes.json() as any;
+
+    if (!tokenData.access_token) {
+      return { error: true, message: '네이버 인증에 실패했습니다.' };
+    }
+
+    // 2. 네이버 사용자 정보 조회
+    const userRes = await fetch('https://openapi.naver.com/v1/nid/me', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const naverData = await userRes.json() as any;
+    const naverUser = naverData.response;
+
+    const naverId = String(naverUser.id);
+    const email = naverUser.email ?? null;
+    const nickname = naverUser.name ?? null;
+    const profileImage = naverUser.profile_image ?? null;
+
+    // 3. DB에서 naverId로 유저 검색
+    const existingUser = await this.prisma.user.findUnique({
+      where: { naverId },
+    });
+
+    if (existingUser) {
+      const token = jwt.sign(
+        { sub: String(existingUser.id), userId: existingUser.userId, userType: existingUser.userType },
+        this.jwtSecret as Secret,
+        { expiresIn: '7d' as unknown as SignOptions['expiresIn'] },
+      );
+
+      return {
+        isNewUser: false,
+        token,
+        userId: existingUser.userId,
+        name: existingUser.userName,
+        profileImage: existingUser.profileImage,
+      };
+    }
+
+    // 신규 회원 — 임시 토큰 발급
+    const tempToken = jwt.sign(
+      { naverId, email, nickname, profileImage, type: 'temp_signup' },
       this.jwtSecret as Secret,
       { expiresIn: '30m' as unknown as SignOptions['expiresIn'] },
     );

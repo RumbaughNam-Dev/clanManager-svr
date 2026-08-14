@@ -19,6 +19,7 @@ model user {
   status       String          @default("pending") @db.VarChar(20)
   kakaoId      String?         @unique @db.VarChar(50)
   googleId     String?         @unique @db.VarChar(50)
+  naverId      String?         @unique @db.VarChar(50)
   profileImage String?         @db.VarChar(500)
   birthDate    String?         @db.VarChar(20)
   kakaoTalkId  String?         @db.VarChar(50)
