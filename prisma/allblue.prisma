@@ -65,6 +65,8 @@ model form_submission {
   instructorId Int
   formId       String   @db.VarChar(50)
   diverName    String   @db.VarChar(50)
+  instructorName String?  @db.VarChar(50)
+  buddyName    String?  @db.VarChar(50)
   status             String   @default("pending") @db.VarChar(20)
   printed            Int      @default(0)
   checkboxData       Json?
