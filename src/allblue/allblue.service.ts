@@ -204,7 +204,6 @@ export class AllblueService {
           formId: submission.formId,
           diverName: submission.diverName,
           instructorName: submission.instructorName,
-          buddyName: submission.buddyName,
           status: submission.status,
           printed: submission.printed,
           checkboxData: submission.checkboxData,
@@ -276,7 +275,7 @@ export class AllblueService {
 
     if (submission.formId === 'liability') {
       // 면책동의서
-      const { buddyName, signDate, signatureData, guardianSignature } = body;
+      const { signDate, signatureData, guardianSignature } = body;
 
       if (!signDate?.trim() || !signatureData?.trim()) {
         return { success: false, message: '날짜와 서명을 입력해주세요.' };
@@ -287,7 +286,6 @@ export class AllblueService {
       await this.prisma.form_submission.update({
         where: { uuid },
         data: {
-          buddyName: buddyName?.trim() || null,
           signDate, signatureData: signatureUrl,
           guardianSignature: guardianSignature ?? null,
           status: 'submitted',
@@ -347,6 +345,21 @@ export class AllblueService {
     });
 
     return { success: true };
+  }
+
+  async checkUserId(userId: string) {
+    if (!userId?.trim()) {
+      return { success: false, message: '아이디를 입력해주세요.' };
+    }
+
+    const [existingUser, pendingRequest] = await Promise.all([
+      this.prisma.user.findUnique({ where: { userId: userId.trim() } }),
+      this.prisma.instructor_register_request.findFirst({
+        where: { userId: userId.trim(), status: 'pending' },
+      }),
+    ]);
+
+    return { success: true, data: { available: !existingUser && !pendingRequest } };
   }
 
   async registerRequest(body: any, file: Express.Multer.File) {

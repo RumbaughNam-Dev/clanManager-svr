@@ -57,6 +57,11 @@ export class AllblueController {
     return this.allblueService.printSubmission(uuid);
   }
 
+  @Get('checkUserId')
+  checkUserId(@Query('userId') userId: string) {
+    return this.allblueService.checkUserId(userId);
+  }
+
   @Post('registerRequest')
   @UseInterceptors(FileInterceptor('certImage'))
   registerRequest(@Body() body: any, @UploadedFile() file: Express.Multer.File) {
