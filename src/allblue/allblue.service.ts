@@ -371,7 +371,7 @@ export class AllblueService {
     if (!name?.trim()) {
       return { success: false, message: '이름을 입력해주세요.' };
     }
-    if (isInstructor === '1' && !file) {
+    if (String(isInstructor) === '1' && !file) {
       return { success: false, message: '자격증 이미지를 첨부해주세요.' };
     }
 
@@ -391,7 +391,7 @@ export class AllblueService {
         phone: phone?.trim() || null,
         kakaoId: kakaoId?.trim() || null,
         instaId: instaId?.trim() || null,
-        isInstructor: isInstructor === '1' ? '1' : '0',
+        isInstructor: String(isInstructor) === '1' ? '1' : '0',
         certImageUrl,
       },
     });
