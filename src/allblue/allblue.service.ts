@@ -363,13 +363,16 @@ export class AllblueService {
   }
 
   async registerRequest(body: any, file: Express.Multer.File) {
-    const { userId, name, phone, kakaoId, instaId, isInstructor } = body;
+    const { userId, name, phone, kakaoId, instaId, isInstructor, password } = body;
 
     if (!userId?.trim() || userId.trim().length < 4) {
       return { success: false, message: '아이디는 4자 이상 입력해주세요.' };
     }
     if (!name?.trim()) {
       return { success: false, message: '이름을 입력해주세요.' };
+    }
+    if (!password?.trim()) {
+      return { success: false, message: '비밀번호를 입력해주세요.' };
     }
     if (Number(isInstructor) === 1 && !file) {
       return { success: false, message: '자격증 이미지를 첨부해주세요.' };
@@ -384,10 +387,13 @@ export class AllblueService {
       }
     }
 
+    const hashedPassword = await bcrypt.hash(password.trim(), 10);
+
     await this.prisma.instructor_register_request.create({
       data: {
         userId: userId.trim(),
         name: name.trim(),
+        password: hashedPassword,
         phone: phone?.trim() || null,
         kakaoId: kakaoId?.trim() || null,
         instaId: instaId?.trim() || null,
@@ -410,10 +416,33 @@ export class AllblueService {
   }
 
   async updateRegisterRequestStatus(id: number, status: string) {
+    const request = await this.prisma.instructor_register_request.findUnique({ where: { id } });
+    if (!request) {
+      return { success: false, message: '존재하지 않는 요청입니다.' };
+    }
+
     await this.prisma.instructor_register_request.update({
       where: { id },
       data: { status },
     });
+
+    // 승인 시 user 테이블에 계정 생성
+    if (status === 'approved') {
+      const existingUser = await this.prisma.user.findUnique({ where: { userId: request.userId } });
+      if (!existingUser) {
+        await this.prisma.user.create({
+          data: {
+            userId: request.userId,
+            password: request.password ?? '',
+            userName: request.name,
+            phone: request.phone,
+            userType: Number(request.isInstructor) === 1 ? 'instructor' : 'user',
+            status: 'approved',
+          },
+        });
+      }
+    }
+
     return { success: true };
   }
 
