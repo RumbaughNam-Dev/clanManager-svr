@@ -405,6 +405,85 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getProfile(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, userName: true, profileImage: true, profile: true },
+    });
+
+    if (!user) {
+      return { success: false, message: '사용자를 찾을 수 없습니다.' };
+    }
+
+    const profile = user.profile
+      ? {
+          diverLevel: user.profile.diverLevel,
+          description: user.profile.description,
+          shoesSize: user.profile.shoesSize,
+          finSize: user.profile.finSize,
+          sta: user.profile.sta ? Number(user.profile.sta) : null,
+          dynb: user.profile.dynb ? Number(user.profile.dynb) : null,
+          dyn: user.profile.dyn ? Number(user.profile.dyn) : null,
+          dnf: user.profile.dnf ? Number(user.profile.dnf) : null,
+          fim: user.profile.fim ? Number(user.profile.fim) : null,
+          cwtb: user.profile.cwtb ? Number(user.profile.cwtb) : null,
+          cwt: user.profile.cwt ? Number(user.profile.cwt) : null,
+          cnf: user.profile.cnf ? Number(user.profile.cnf) : null,
+        }
+      : null;
+
+    return {
+      user: {
+        id: user.id,
+        name: user.userName,
+        profileImage: user.profileImage,
+      },
+      profile,
+    };
+  }
+
+  async updateProfile(userId: number, body: any) {
+    const { diverLevel, description, shoesSize, finSize, sta, dynb, dyn, dnf, fim, cwtb, cwt, cnf } = body;
+
+    const data: any = {};
+    if (diverLevel !== undefined) data.diverLevel = diverLevel;
+    if (description !== undefined) data.description = description;
+    if (shoesSize !== undefined) data.shoesSize = shoesSize;
+    if (finSize !== undefined) data.finSize = finSize;
+    if (sta !== undefined) data.sta = sta;
+    if (dynb !== undefined) data.dynb = dynb;
+    if (dyn !== undefined) data.dyn = dyn;
+    if (dnf !== undefined) data.dnf = dnf;
+    if (fim !== undefined) data.fim = fim;
+    if (cwtb !== undefined) data.cwtb = cwtb;
+    if (cwt !== undefined) data.cwt = cwt;
+    if (cnf !== undefined) data.cnf = cnf;
+
+    const profile = await this.prisma.user_profile.upsert({
+      where: { userId },
+      create: { userId, ...data },
+      update: data,
+    });
+
+    return {
+      success: true,
+      profile: {
+        diverLevel: profile.diverLevel,
+        description: profile.description,
+        shoesSize: profile.shoesSize,
+        finSize: profile.finSize,
+        sta: profile.sta ? Number(profile.sta) : null,
+        dynb: profile.dynb ? Number(profile.dynb) : null,
+        dyn: profile.dyn ? Number(profile.dyn) : null,
+        dnf: profile.dnf ? Number(profile.dnf) : null,
+        fim: profile.fim ? Number(profile.fim) : null,
+        cwtb: profile.cwtb ? Number(profile.cwtb) : null,
+        cwt: profile.cwt ? Number(profile.cwt) : null,
+        cnf: profile.cnf ? Number(profile.cnf) : null,
+      },
+    };
+  }
+
   async getRegisterRequests() {
     const requests = await this.prisma.instructor_register_request.findMany({
       orderBy: { createdAt: 'desc' },

@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AllblueService } from './allblue.service';
 import { AllblueJwtAuthGuard } from './allblue-jwt-auth.guard';
@@ -66,6 +66,18 @@ export class AllblueController {
   @UseInterceptors(FileInterceptor('certImage'))
   registerRequest(@Body() body: any, @UploadedFile() file: Express.Multer.File) {
     return this.allblueService.registerRequest(body, file);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('profile')
+  getProfile(@Req() req: any) {
+    return this.allblueService.getProfile(Number(req.user.sub));
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Put('profile')
+  updateProfile(@Req() req: any, @Body() body: any) {
+    return this.allblueService.updateProfile(Number(req.user.sub), body);
   }
 
   @UseGuards(AllblueJwtAuthGuard)

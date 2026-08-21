@@ -33,6 +33,7 @@ model user {
   updatedAt    DateTime        @updatedAt
   lastLoginAt  DateTime?
   loginHistory login_history[]
+  profile      user_profile?
 }
 
 model login_history {
@@ -44,6 +45,26 @@ model login_history {
   user      user     @relation(fields: [userId], references: [id])
 
   @@index([userId, createdAt])
+}
+
+model user_profile {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @unique(map: "uk_user_profile_userId")
+  diverLevel String?  @db.VarChar(20)
+  description String? @db.Text
+  shoesSize  Int?
+  finSize    String?  @db.VarChar(10)
+  sta        Decimal? @db.Decimal(6, 2)
+  dynb       Decimal? @db.Decimal(6, 2)
+  dyn        Decimal? @db.Decimal(6, 2)
+  dnf        Decimal? @db.Decimal(6, 2)
+  fim        Decimal? @db.Decimal(6, 2)
+  cwtb       Decimal? @db.Decimal(6, 2)
+  cwt        Decimal? @db.Decimal(6, 2)
+  cnf        Decimal? @db.Decimal(6, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       user     @relation(fields: [userId], references: [id])
 }
 
 model form_item {
