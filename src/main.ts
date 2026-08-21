@@ -1,6 +1,7 @@
 // src/main.ts
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { Logger, NestApplicationOptions, ValidationPipe } from '@nestjs/common';
 import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serializer.interceptor';
@@ -46,7 +47,7 @@ async function bootstrap() {
     logger: ['error', 'warn', 'log'],   // 필요하면 'debug','verbose' 추가
   };
 
-  const app = await NestFactory.create(
+  const app = await NestFactory.create<NestExpressApplication>(
     AppModule,
     appOptions
   );
@@ -58,6 +59,11 @@ async function bootstrap() {
   });
 
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // 정적 파일 서빙 (/uploads)
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  app.useStaticAssets(uploadsDir, { prefix: '/uploads' });
 
   // CORS
   const defaultOrigins = [

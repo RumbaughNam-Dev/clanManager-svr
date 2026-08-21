@@ -501,7 +501,12 @@ export class AllblueService {
     let profileImage = await this.s3.uploadFile(file.buffer, key, file.mimetype);
 
     if (!profileImage) {
-      profileImage = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+      const uploadDir = path.join(process.cwd(), 'uploads', 'profile');
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+      const fileName = `${userId}_${Date.now()}.${ext}`;
+      fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
+      const baseUrl = this.config.get<string>('BASE_URL', 'https://api.rumbaugh.co.kr');
+      profileImage = `${baseUrl}/uploads/profile/${fileName}`;
     }
 
     await this.prisma.user.update({
