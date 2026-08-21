@@ -445,6 +445,13 @@ export class AllblueService {
   async updateProfile(userId: number, body: any) {
     const { diverLevel, description, shoesSize, finSize, sta, dynb, dyn, dnf, fim, cwtb, cwt, cnf } = body;
 
+    if (body.name?.trim()) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { userName: body.name.trim() },
+      });
+    }
+
     const data: any = {};
     if (diverLevel !== undefined) data.diverLevel = diverLevel;
     if (description !== undefined) data.description = description;
