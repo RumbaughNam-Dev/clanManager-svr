@@ -81,6 +81,13 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Post('profile/image')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadProfileImage(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+    return this.allblueService.uploadProfileImage(Number(req.user.sub), file);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Get('admin/registerRequests')
   getRegisterRequests(@Req() req: any) {
     if (req.user.userId !== 'expoool') throw new ForbiddenException();

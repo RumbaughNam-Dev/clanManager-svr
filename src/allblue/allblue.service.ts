@@ -484,6 +484,27 @@ export class AllblueService {
     };
   }
 
+  async uploadProfileImage(userId: number, file: Express.Multer.File) {
+    if (!file) {
+      return { success: false, message: '이미지 파일을 첨부해주세요.' };
+    }
+
+    const ext = file.originalname.split('.').pop() ?? 'jpg';
+    const key = `profile/${userId}_${Date.now()}.${ext}`;
+    let profileImage = await this.s3.uploadFile(file.buffer, key, file.mimetype);
+
+    if (!profileImage) {
+      profileImage = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { profileImage },
+    });
+
+    return { success: true, profileImage };
+  }
+
   async getRegisterRequests() {
     const requests = await this.prisma.instructor_register_request.findMany({
       orderBy: { createdAt: 'desc' },
