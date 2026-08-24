@@ -520,6 +520,31 @@ export class AllblueService {
     return { success: true, profileImage };
   }
 
+  async uploadCert(userId: number, file: Express.Multer.File) {
+    if (!file) {
+      return { success: false, message: '자격증 이미지를 첨부해주세요.' };
+    }
+
+    const ext = file.originalname.split('.').pop() ?? 'jpg';
+    const key = `certs/${userId}_${Date.now()}.${ext}`;
+    let imageUrl = await this.s3.uploadFile(file.buffer, key, file.mimetype);
+
+    if (!imageUrl) {
+      const uploadDir = path.join(process.cwd(), 'uploads', 'certs');
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+      const fileName = `${userId}_${Date.now()}.${ext}`;
+      fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
+      const baseUrl = this.config.get<string>('BASE_URL', 'https://api.rumbaugh.co.kr');
+      imageUrl = `${baseUrl}/uploads/certs/${fileName}`;
+    }
+
+    await this.prisma.cert_request.create({
+      data: { userId, imageUrl },
+    });
+
+    return { success: true };
+  }
+
   async getRegisterRequests() {
     const requests = await this.prisma.instructor_register_request.findMany({
       orderBy: { createdAt: 'desc' },

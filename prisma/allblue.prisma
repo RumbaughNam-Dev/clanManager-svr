@@ -34,6 +34,7 @@ model user {
   lastLoginAt  DateTime?
   loginHistory login_history[]
   profile      user_profile?
+  certRequests cert_request[]
 }
 
 model login_history {
@@ -107,6 +108,18 @@ model form_submission {
   updatedAt          DateTime @updatedAt
 
   @@index([instructorId])
+}
+
+model cert_request {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  imageUrl  String   @map("image_url") @db.VarChar(500)
+  status    String   @default("pending") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      user     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
 
 model instructor_register_request {
