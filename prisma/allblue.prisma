@@ -63,7 +63,7 @@ model user_profile {
   cwtb        Decimal? @db.Decimal(6, 2)
   cwt         Decimal? @db.Decimal(6, 2)
   cnf         Decimal? @db.Decimal(6, 2)
-  level       Int?     @default(0)
+  level       String?  @db.VarChar(2)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   user        user     @relation(fields: [userId], references: [id])
