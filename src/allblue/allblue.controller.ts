@@ -95,6 +95,30 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('cert/pending-count')
+  getCertPendingCount() {
+    return this.allblueService.getCertPendingCount();
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('cert/requests')
+  getCertRequests() {
+    return this.allblueService.getCertRequests();
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('cert/requests/:id/approve')
+  approveCertRequest(@Param('id') id: string, @Body() body: { level: string }) {
+    return this.allblueService.approveCertRequest(Number(id), body.level);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('cert/requests/:id/reject')
+  rejectCertRequest(@Param('id') id: string) {
+    return this.allblueService.rejectCertRequest(Number(id));
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Get('admin/registerRequests')
   getRegisterRequests(@Req() req: any) {
     if (req.user.userId !== 'expoool') throw new ForbiddenException();

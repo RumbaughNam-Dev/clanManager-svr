@@ -545,6 +545,61 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getCertPendingCount() {
+    const count = await this.prisma.cert_request.count({
+      where: { status: 'pending' },
+    });
+    return { count };
+  }
+
+  async getCertRequests() {
+    const requests = await this.prisma.cert_request.findMany({
+      where: { status: 'pending' },
+      orderBy: { createdAt: 'desc' },
+      include: { user: { select: { userId: true, userName: true, birthDate: true } } },
+    });
+
+    return {
+      requests: requests.map(r => ({
+        id: r.id,
+        userId: r.user.userId,
+        userName: r.user.userName,
+        birthDate: r.user.birthDate,
+        imageUrl: r.imageUrl,
+        status: r.status,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async approveCertRequest(id: number, level: string) {
+    const request = await this.prisma.cert_request.findUnique({ where: { id } });
+    if (!request) {
+      return { success: false, message: '존재하지 않는 요청입니다.' };
+    }
+
+    await this.prisma.cert_request.update({
+      where: { id },
+      data: { status: 'approved' },
+    });
+
+    await this.prisma.user_profile.upsert({
+      where: { userId: request.userId },
+      create: { userId: request.userId, level },
+      update: { level },
+    });
+
+    return { success: true };
+  }
+
+  async rejectCertRequest(id: number) {
+    await this.prisma.cert_request.update({
+      where: { id },
+      data: { status: 'rejected' },
+    });
+    return { success: true };
+  }
+
   async getRegisterRequests() {
     const requests = await this.prisma.instructor_register_request.findMany({
       orderBy: { createdAt: 'desc' },
