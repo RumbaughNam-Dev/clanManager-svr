@@ -429,6 +429,7 @@ export class AllblueService {
           cwtb: user.profile.cwtb ? Number(user.profile.cwtb) : null,
           cwt: user.profile.cwt ? Number(user.profile.cwt) : null,
           cnf: user.profile.cnf ? Number(user.profile.cnf) : null,
+          level: user.profile.level,
         }
       : null;
 
@@ -465,6 +466,7 @@ export class AllblueService {
     if (cwtb !== undefined) data.cwtb = cwtb;
     if (cwt !== undefined) data.cwt = cwt;
     if (cnf !== undefined) data.cnf = cnf;
+    if (body.level !== undefined) data.level = body.level;
 
     const profile = await this.prisma.user_profile.upsert({
       where: { userId },
@@ -487,6 +489,7 @@ export class AllblueService {
         cwtb: profile.cwtb ? Number(profile.cwtb) : null,
         cwt: profile.cwt ? Number(profile.cwt) : null,
         cnf: profile.cnf ? Number(profile.cnf) : null,
+        level: profile.level,
       },
     };
   }
