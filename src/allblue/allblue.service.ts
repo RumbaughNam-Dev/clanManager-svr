@@ -592,12 +592,25 @@ export class AllblueService {
     return { success: true };
   }
 
-  async rejectCertRequest(id: number) {
+  async rejectCertRequest(id: number, reason?: string) {
     await this.prisma.cert_request.update({
       where: { id },
-      data: { status: 'rejected' },
+      data: { status: 'rejected', rejectReason: reason?.trim() || null },
     });
     return { success: true };
+  }
+
+  async getCertLastReject(userId: number) {
+    const request = await this.prisma.cert_request.findFirst({
+      where: { userId, status: 'rejected' },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!request) {
+      return { rejected: false };
+    }
+
+    return { rejected: true, reason: request.rejectReason };
   }
 
   async getRegisterRequests() {

@@ -114,8 +114,14 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Patch('cert/requests/:id/reject')
-  rejectCertRequest(@Param('id') id: string) {
-    return this.allblueService.rejectCertRequest(Number(id));
+  rejectCertRequest(@Param('id') id: string, @Body() body: { reason?: string }) {
+    return this.allblueService.rejectCertRequest(Number(id), body.reason);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('cert/last-reject')
+  getCertLastReject(@Req() req: any) {
+    return this.allblueService.getCertLastReject(Number(req.user.sub));
   }
 
   @UseGuards(AllblueJwtAuthGuard)

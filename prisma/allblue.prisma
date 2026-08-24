@@ -114,10 +114,11 @@ model cert_request {
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
   imageUrl  String   @map("image_url") @db.VarChar(500)
-  status    String   @default("pending") @db.VarChar(20)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  user      user     @relation(fields: [userId], references: [id])
+  status       String   @default("pending") @db.VarChar(20)
+  rejectReason String?  @map("reject_reason") @db.VarChar(200)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  user         user     @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }
