@@ -123,6 +123,67 @@ model cert_request {
   @@index([userId])
 }
 
+model association {
+  id          Int       @id @default(autoincrement()) @db.UnsignedInt
+  code        String    @unique(map: "uk_association_code") @db.VarChar(20)
+  name        String    @db.VarChar(100)
+  nameKo      String?   @map("name_ko") @db.VarChar(100)
+  fullName    String?   @map("full_name") @db.VarChar(200)
+  country     String?   @db.VarChar(50)
+  foundedYear Int?      @map("founded_year") @db.SmallInt
+  website     String?   @db.VarChar(200)
+  sortOrder   Int       @default(0) @map("sort_order") @db.SmallInt
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  licenses    license[]
+}
+
+model license {
+  id            Int                   @id @default(autoincrement()) @db.UnsignedInt
+  associationId Int                   @map("association_id") @db.UnsignedInt
+  code          String?               @db.VarChar(30)
+  name          String                @db.VarChar(120)
+  nameKo        String?               @map("name_ko") @db.VarChar(120)
+  levelOrder    Int                   @map("level_order") @db.UnsignedTinyInt
+  isInstructor  Int                   @default(0) @map("is_instructor") @db.TinyInt
+  note          String?               @db.VarChar(500)
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+  association   association           @relation(fields: [associationId], references: [id])
+  requirements  license_requirement[]
+
+  @@unique([associationId, levelOrder], map: "uk_license_assoc_level")
+  @@index([associationId], map: "idx_license_assoc")
+}
+
+model license_requirement {
+  id           Int                    @id @default(autoincrement()) @db.UnsignedInt
+  licenseId    Int                    @map("license_id") @db.UnsignedInt
+  parentId     Int?                   @map("parent_id") @db.UnsignedInt
+  reqGroup     String                 @map("req_group") @db.VarChar(20)
+  reqType      String                 @map("req_type") @db.VarChar(10)
+  code         String?                @db.VarChar(20)
+  name         String                 @db.VarChar(150)
+  nameKo       String?                @map("name_ko") @db.VarChar(150)
+  unit         String                 @default("NONE") @db.VarChar(10)
+  minValue     Decimal?               @map("min_value") @db.Decimal(7, 2)
+  maxValue     Decimal?               @map("max_value") @db.Decimal(7, 2)
+  displayValue String?                @map("display_value") @db.VarChar(80)
+  isOptional   Int                    @default(0) @map("is_optional") @db.TinyInt
+  sourceType   String                 @default("OFFICIAL") @map("source_type") @db.VarChar(20)
+  sortOrder    Int                    @default(0) @map("sort_order") @db.SmallInt
+  note         String?                @db.VarChar(500)
+  createdAt    DateTime               @default(now()) @map("created_at")
+  updatedAt    DateTime               @updatedAt @map("updated_at")
+  license      license                @relation(fields: [licenseId], references: [id])
+  parent       license_requirement?   @relation("RequirementTree", fields: [parentId], references: [id])
+  children     license_requirement[]  @relation("RequirementTree")
+
+  @@index([licenseId, sortOrder], map: "idx_req_license")
+  @@index([parentId], map: "idx_req_parent")
+  @@index([code], map: "idx_req_code")
+}
+
 model instructor_register_request {
   id           Int      @id @default(autoincrement())
   userId       String   @db.VarChar(50)

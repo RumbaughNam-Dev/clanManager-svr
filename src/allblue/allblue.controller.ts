@@ -94,6 +94,21 @@ export class AllblueController {
     return this.allblueService.uploadCert(Number(req.user.sub), file);
   }
 
+  @Get('associations')
+  getAssociations() {
+    return this.allblueService.getAssociations();
+  }
+
+  @Get('licenses')
+  getLicenses(@Query('associationCode') associationCode?: string) {
+    return this.allblueService.getLicenses(associationCode);
+  }
+
+  @Get('licenses/:code/requirements')
+  getLicenseRequirements(@Param('code') code: string) {
+    return this.allblueService.getLicenseRequirements(code);
+  }
+
   @UseGuards(AllblueJwtAuthGuard)
   @Get('cert/pending-count')
   getCertPendingCount() {

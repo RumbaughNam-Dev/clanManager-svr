@@ -555,6 +555,71 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getAssociations() {
+    const associations = await this.prisma.association.findMany({
+      orderBy: { sortOrder: 'asc' },
+      select: {
+        id: true, code: true, name: true, nameKo: true, fullName: true,
+        country: true, foundedYear: true, website: true, sortOrder: true,
+      },
+    });
+    return { success: true, data: associations };
+  }
+
+  async getLicenses(associationCode?: string) {
+    const where: any = {};
+    if (associationCode) {
+      const assoc = await this.prisma.association.findUnique({ where: { code: associationCode } });
+      if (!assoc) return { success: false, message: '존재하지 않는 협회입니다.' };
+      where.associationId = assoc.id;
+    }
+
+    const licenses = await this.prisma.license.findMany({
+      where,
+      orderBy: [{ association: { sortOrder: 'asc' } }, { levelOrder: 'asc' }],
+      select: {
+        id: true, code: true, name: true, nameKo: true, levelOrder: true,
+        isInstructor: true, note: true,
+        association: { select: { code: true, name: true, nameKo: true } },
+      },
+    });
+    return { success: true, data: licenses };
+  }
+
+  async getLicenseRequirements(code: string) {
+    const license = await this.prisma.license.findFirst({
+      where: { code },
+      select: { id: true, code: true, name: true, nameKo: true },
+    });
+
+    if (!license) {
+      return { success: false, message: '존재하지 않는 라이센스입니다.' };
+    }
+
+    const requirements = await this.prisma.license_requirement.findMany({
+      where: { licenseId: license.id },
+      orderBy: { sortOrder: 'asc' },
+      select: {
+        id: true, parentId: true, reqGroup: true, reqType: true, code: true,
+        name: true, nameKo: true, unit: true,
+        minValue: true, maxValue: true, displayValue: true,
+        isOptional: true, sourceType: true, sortOrder: true, note: true,
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        license,
+        requirements: requirements.map(r => ({
+          ...r,
+          minValue: r.minValue ? Number(r.minValue) : null,
+          maxValue: r.maxValue ? Number(r.maxValue) : null,
+        })),
+      },
+    };
+  }
+
   async getCertPendingCount() {
     const count = await this.prisma.cert_request.count({
       where: { status: 'pending' },
