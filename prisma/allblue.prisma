@@ -123,6 +123,21 @@ model cert_request {
   @@index([userId])
 }
 
+model common_code {
+  codeGroup   String   @map("code_group") @db.VarChar(30)
+  code        String   @db.VarChar(30)
+  name        String   @db.VarChar(100)
+  nameKo      String?  @map("name_ko") @db.VarChar(100)
+  sortOrder   Int      @default(0) @map("sort_order") @db.SmallInt
+  isActive    Int      @default(1) @map("is_active") @db.TinyInt
+  extraValue  String?  @map("extra_value") @db.VarChar(200)
+  description String?  @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@id([codeGroup, code])
+}
+
 model association {
   id          Int       @id @default(autoincrement()) @db.UnsignedInt
   code        String    @unique(map: "uk_association_code") @db.VarChar(20)

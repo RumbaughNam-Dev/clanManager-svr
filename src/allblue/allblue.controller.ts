@@ -94,6 +94,11 @@ export class AllblueController {
     return this.allblueService.uploadCert(Number(req.user.sub), file);
   }
 
+  @Get('codes')
+  getCodes(@Query('group') group: string) {
+    return this.allblueService.getCodes(group);
+  }
+
   @Get('associations')
   getAssociations() {
     return this.allblueService.getAssociations();

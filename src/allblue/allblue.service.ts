@@ -555,6 +555,20 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getCodes(group: string) {
+    if (!group?.trim()) {
+      return { success: false, message: 'group 파라미터는 필수입니다.' };
+    }
+
+    const codes = await this.prisma.common_code.findMany({
+      where: { codeGroup: group.trim(), isActive: 1 },
+      orderBy: { sortOrder: 'asc' },
+      select: { code: true, name: true, nameKo: true, extraValue: true, sortOrder: true },
+    });
+
+    return { success: true, data: codes };
+  }
+
   async getAssociations() {
     const associations = await this.prisma.association.findMany({
       orderBy: { sortOrder: 'asc' },
