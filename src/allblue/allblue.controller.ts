@@ -123,6 +123,12 @@ export class AllblueController {
     return this.allblueService.getDailySchedules(date, req.user.userId);
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('schedule/monthly')
+  getMonthlySchedules(@Query('year') year: string, @Query('month') month: string, @Req() req: any) {
+    return this.allblueService.getMonthlySchedules(year, month, req.user.userId);
+  }
+
   @Get('associations')
   getAssociations() {
     return this.allblueService.getAssociations();

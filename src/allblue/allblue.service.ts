@@ -694,6 +694,62 @@ export class AllblueService {
     };
   }
 
+  async getMonthlySchedules(yearStr: string, monthStr: string, userId: string) {
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      return { success: false, message: 'year, month 파라미터를 올바르게 입력해주세요.' };
+    }
+
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1);
+
+    const schedules = await this.prisma.schedule.findMany({
+      where: {
+        scheduleDate: { gte: startDate, lt: endDate },
+        OR: [
+          { instructorId: userId },
+          { participants: { some: { userId } } },
+        ],
+      },
+      orderBy: [{ scheduleDate: 'asc' }, { startHour: 'asc' }, { startMinute: 'asc' }],
+      include: {
+        pool: { select: { name: true } },
+        instructor: { select: { userName: true } },
+        participants: { include: { user: { select: { userName: true } } } },
+      },
+    });
+
+    const categoryCodes = [...new Set(schedules.map(s => s.categoryCode))];
+    const codes = categoryCodes.length > 0
+      ? await this.prisma.common_code.findMany({
+          where: { codeGroup: 'SCHEDULE_TYPE', code: { in: categoryCodes } },
+        })
+      : [];
+    const codeMap = new Map(codes.map(c => [c.code, c.nameKo ?? c.name]));
+
+    return {
+      schedules: schedules.map(s => {
+        const d = s.scheduleDate;
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return {
+          id: s.id,
+          title: s.title,
+          scheduleDate: dateStr,
+          startHour: s.startHour,
+          startMinute: s.startMinute,
+          poolName: s.pool?.name ?? null,
+          categoryCode: s.categoryCode,
+          categoryName: codeMap.get(s.categoryCode) ?? s.categoryCode,
+          instructorName: s.instructor.userName,
+          participantCount: s.participants.length,
+          participantNames: s.participants.map(p => p.user.userName),
+        };
+      }),
+    };
+  }
+
   async getCodes(group: string) {
     if (!group?.trim()) {
       return { success: false, message: 'group 파라미터는 필수입니다.' };
