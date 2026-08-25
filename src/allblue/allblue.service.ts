@@ -571,7 +571,7 @@ export class AllblueService {
 
     const users = await this.prisma.user.findMany({
       where: { userName: { contains: q.trim() } },
-      select: { id: true, userName: true, phone: true },
+      select: { id: true, userName: true, phone: true, birthDate: true, profile: { select: { level: true } } },
     });
 
     // 현재 강사의 교육생(참가자로 등록된 적 있는 유저)을 최상단
@@ -593,7 +593,7 @@ export class AllblueService {
     });
 
     return {
-      users: sorted.map(u => ({ id: u.id, name: u.userName, phone: u.phone })),
+      users: sorted.map(u => ({ id: u.id, name: u.userName, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? null })),
     };
   }
 
