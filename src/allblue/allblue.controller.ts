@@ -114,13 +114,13 @@ export class AllblueController {
   @UseGuards(AllblueJwtAuthGuard)
   @Post('schedule')
   createSchedule(@Body() body: any, @Req() req: any) {
-    return this.allblueService.createSchedule(body, Number(req.user.sub));
+    return this.allblueService.createSchedule(body, req.user.userId);
   }
 
   @UseGuards(AllblueJwtAuthGuard)
   @Get('schedule/daily')
   getDailySchedules(@Query('date') date: string, @Req() req: any) {
-    return this.allblueService.getDailySchedules(date, Number(req.user.sub));
+    return this.allblueService.getDailySchedules(date, req.user.userId);
   }
 
   @Get('associations')

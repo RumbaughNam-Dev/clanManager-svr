@@ -571,14 +571,14 @@ export class AllblueService {
 
     const users = await this.prisma.user.findMany({
       where: { userName: { contains: q.trim() } },
-      select: { id: true, userName: true, phone: true, birthDate: true, profile: { select: { level: true } } },
+      select: { id: true, userId: true, userName: true, phone: true, birthDate: true, profile: { select: { level: true } } },
     });
 
     // 현재 강사의 교육생(참가자로 등록된 적 있는 유저)을 최상단
     const myStudentIds = await this.prisma.schedule_participant.findMany({
       where: {
-        schedule: { instructorId: currentUserId },
-        userId: { in: users.map(u => u.id) },
+        schedule: { instructorId: users.find(u => u.id === currentUserId)?.userId ?? '' },
+        userId: { in: users.map(u => u.userId) },
       },
       select: { userId: true },
       distinct: ['userId'],
@@ -586,8 +586,8 @@ export class AllblueService {
     const studentIdSet = new Set(myStudentIds.map(s => s.userId));
 
     const sorted = users.sort((a, b) => {
-      const aStudent = studentIdSet.has(a.id) ? 0 : 1;
-      const bStudent = studentIdSet.has(b.id) ? 0 : 1;
+      const aStudent = studentIdSet.has(a.userId) ? 0 : 1;
+      const bStudent = studentIdSet.has(b.userId) ? 0 : 1;
       if (aStudent !== bStudent) return aStudent - bStudent;
       return a.userName.localeCompare(b.userName, 'ko');
     });
@@ -597,41 +597,55 @@ export class AllblueService {
     };
   }
 
-  async createSchedule(body: any, instructorId: number) {
+  async createSchedule(body: any, instructorUserId: string) {
     const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds } = body;
 
-    if (!title?.trim()) {
-      return { success: false, message: '제목을 입력해주세요.' };
+    if (!title?.trim() || title.trim().length > 100) {
+      return { success: false, message: '제목을 입력해주세요. (최대 100자)' };
     }
-    if (!scheduleDate || !categoryCode) {
-      return { success: false, message: '날짜와 분류를 선택해주세요.' };
+    if (!scheduleDate || !/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) {
+      return { success: false, message: '날짜를 YYYY-MM-DD 형식으로 입력해주세요.' };
+    }
+    if (!categoryCode) {
+      return { success: false, message: '분류를 선택해주세요.' };
+    }
+    if (startHour < 0 || startHour > 23 || startMinute < 0 || startMinute > 59) {
+      return { success: false, message: '시간을 올바르게 입력해주세요.' };
     }
 
-    const schedule = await this.prisma.schedule.create({
-      data: {
-        title: title.trim(),
-        scheduleDate: new Date(scheduleDate),
-        startHour,
-        startMinute,
-        poolId: poolId ?? null,
-        categoryCode,
-        instructorId,
-      },
-    });
-
-    if (participantIds?.length > 0) {
-      await this.prisma.schedule_participant.createMany({
-        data: participantIds.map((userId: number) => ({
-          scheduleId: schedule.id,
-          userId,
-        })),
+    return this.prisma.$transaction(async (tx) => {
+      const schedule = await tx.schedule.create({
+        data: {
+          title: title.trim(),
+          scheduleDate: new Date(scheduleDate),
+          startHour,
+          startMinute,
+          poolId: poolId ?? null,
+          categoryCode,
+          instructorId: instructorUserId,
+        },
       });
-    }
 
-    return { success: true, scheduleId: schedule.id };
+      if (participantIds?.length > 0) {
+        // user.id(INT) → user.userId(VARCHAR) 변환
+        const users = await tx.user.findMany({
+          where: { id: { in: participantIds } },
+          select: { userId: true },
+        });
+
+        await tx.schedule_participant.createMany({
+          data: users.map((u) => ({
+            scheduleId: schedule.id,
+            userId: u.userId,
+          })),
+        });
+      }
+
+      return { success: true, scheduleId: schedule.id };
+    });
   }
 
-  async getDailySchedules(date: string, userId: number) {
+  async getDailySchedules(date: string, userId: string) {
     if (!date?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
       return { success: false, message: 'date 파라미터를 YYYY-MM-DD 형식으로 입력해주세요.' };
     }
@@ -658,7 +672,7 @@ export class AllblueService {
     const categoryCodes = [...new Set(schedules.map(s => s.categoryCode))];
     const codes = categoryCodes.length > 0
       ? await this.prisma.common_code.findMany({
-          where: { codeGroup: 'SCHEDULE_CATEGORY', code: { in: categoryCodes } },
+          where: { codeGroup: 'SCHEDULE_TYPE', code: { in: categoryCodes } },
         })
       : [];
     const codeMap = new Map(codes.map(c => [c.code, c.nameKo ?? c.name]));
