@@ -99,6 +99,12 @@ export class AllblueController {
     return this.allblueService.getCodes(group);
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('schedule/daily')
+  getDailySchedules(@Query('date') date: string, @Req() req: any) {
+    return this.allblueService.getDailySchedules(date, Number(req.user.sub));
+  }
+
   @Get('associations')
   getAssociations() {
     return this.allblueService.getAssociations();

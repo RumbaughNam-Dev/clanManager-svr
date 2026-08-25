@@ -555,6 +555,55 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getDailySchedules(date: string, userId: number) {
+    if (!date?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
+      return { success: false, message: 'date 파라미터를 YYYY-MM-DD 형식으로 입력해주세요.' };
+    }
+
+    const scheduleDate = new Date(date.trim());
+
+    const schedules = await this.prisma.schedule.findMany({
+      where: {
+        scheduleDate,
+        OR: [
+          { instructorId: userId },
+          { participants: { some: { userId } } },
+        ],
+      },
+      orderBy: [{ startHour: 'asc' }, { startMinute: 'asc' }],
+      include: {
+        pool: { select: { name: true } },
+        instructor: { select: { userName: true } },
+        participants: { include: { user: { select: { userName: true } } } },
+      },
+    });
+
+    // categoryCode → categoryName 매핑
+    const categoryCodes = [...new Set(schedules.map(s => s.categoryCode))];
+    const codes = categoryCodes.length > 0
+      ? await this.prisma.common_code.findMany({
+          where: { codeGroup: 'SCHEDULE_CATEGORY', code: { in: categoryCodes } },
+        })
+      : [];
+    const codeMap = new Map(codes.map(c => [c.code, c.nameKo ?? c.name]));
+
+    return {
+      schedules: schedules.map(s => ({
+        id: s.id,
+        title: s.title,
+        scheduleDate: date.trim(),
+        startHour: s.startHour,
+        startMinute: s.startMinute,
+        poolName: s.pool?.name ?? null,
+        categoryCode: s.categoryCode,
+        categoryName: codeMap.get(s.categoryCode) ?? s.categoryCode,
+        instructorName: s.instructor.userName,
+        participantCount: s.participants.length,
+        participantNames: s.participants.map(p => p.user.userName),
+      })),
+    };
+  }
+
   async getCodes(group: string) {
     if (!group?.trim()) {
       return { success: false, message: 'group 파라미터는 필수입니다.' };
