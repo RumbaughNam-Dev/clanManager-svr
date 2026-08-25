@@ -613,8 +613,6 @@ export class AllblueService {
       return { success: false, message: '시간을 올바르게 입력해주세요.' };
     }
 
-    console.log('[createSchedule] instructorUserId:', instructorUserId, typeof instructorUserId);
-
     return this.prisma.$transaction(async (tx) => {
       const schedule = await tx.schedule.create({
         data: {
