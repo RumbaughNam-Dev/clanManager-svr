@@ -298,17 +298,25 @@ export class AllblueService {
         doctorName, doctorSignatureData, doctorDate, doctorPhone, doctorAddress, doctorAddressDetail, doctorChecks,
       } = body;
 
-      if (
-        !checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim() ||
-        !doctorName?.trim() || !doctorSignatureData?.trim() || !doctorDate?.trim() ||
-        !doctorPhone?.trim() || !doctorAddress?.trim() || !doctorAddressDetail?.trim()
-      ) {
+      if (!checkboxData || !birthDate?.trim() || !signDate?.trim() || !signatureData?.trim()) {
         return { success: false, message: '모든 항목을 입력해주세요.' };
+      }
+
+      // checkboxData에 "yes"가 하나라도 있으면 의사진술서 필수
+      const hasYes = Object.values(checkboxData).some((v: any) => v === 'yes');
+
+      if (hasYes) {
+        if (
+          !doctorName?.trim() || !doctorSignatureData?.trim() || !doctorDate?.trim() ||
+          !doctorPhone?.trim() || !doctorAddress?.trim() || !doctorAddressDetail?.trim()
+        ) {
+          return { success: false, message: '의사 확인 정보를 모두 입력해주세요.' };
+        }
       }
 
       const [signatureUrl, doctorSigUrl] = await Promise.all([
         this.s3.processSignatureData(signatureData, uuid, 'diver'),
-        this.s3.processSignatureData(doctorSignatureData, uuid, 'doctor'),
+        hasYes ? this.s3.processSignatureData(doctorSignatureData, uuid, 'doctor') : Promise.resolve(undefined),
       ]);
 
       await this.prisma.form_submission.update({
@@ -316,7 +324,9 @@ export class AllblueService {
         data: {
           checkboxData, checkboxDetailData: checkboxDetailData ?? null, birthDate, signDate, signatureData: signatureUrl,
           guardianSignature: guardianSignature ?? null,
-          doctorName, doctorSignatureData: doctorSigUrl, doctorDate, doctorPhone, doctorAddress, doctorAddressDetail,
+          doctorName: doctorName ?? null, doctorSignatureData: doctorSigUrl ?? null,
+          doctorDate: doctorDate ?? null, doctorPhone: doctorPhone ?? null,
+          doctorAddress: doctorAddress ?? null, doctorAddressDetail: doctorAddressDetail ?? null,
           doctorChecks: doctorChecks ?? null,
           status: 'submitted',
         },
