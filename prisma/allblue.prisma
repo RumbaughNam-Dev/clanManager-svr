@@ -33,8 +33,12 @@ model user {
   updatedAt    DateTime        @updatedAt
   lastLoginAt  DateTime?
   loginHistory login_history[]
-  profile      user_profile?
-  certRequests cert_request[]
+  profile                 user_profile?
+  certRequests            cert_request[]
+  schedules               schedule[]               @relation("schedule_instructor")
+  participations          schedule_participant[]
+  achievements            user_license_achievement[] @relation("achievement_user")
+  instructedAchievements  user_license_achievement[] @relation("achievement_instructor")
 }
 
 model login_history {
@@ -123,6 +127,79 @@ model cert_request {
   @@index([userId])
 }
 
+model diving_pool {
+  id           Int       @id @default(autoincrement()) @db.UnsignedInt
+  name         String    @db.VarChar(100)
+  nameEn       String?   @map("name_en") @db.VarChar(150)
+  region       String?   @db.VarChar(20)
+  sigungu      String?   @db.VarChar(30)
+  address      String?   @db.VarChar(200)
+  phone        String?   @db.VarChar(20)
+  phoneAlt     String?   @map("phone_alt") @db.VarChar(20)
+  depthM       Decimal?  @map("depth_m") @db.Decimal(4, 1)
+  isIndoor     Int       @default(1) @map("is_indoor") @db.TinyInt
+  poolType     String    @default("DEEP_POOL") @map("pool_type") @db.VarChar(20)
+  latitude     Decimal?  @db.Decimal(10, 7)
+  longitude    Decimal?  @db.Decimal(10, 7)
+  kakaoMapUrl  String?   @map("kakao_map_url") @db.VarChar(400)
+  website      String?   @db.VarChar(200)
+  status       String    @default("OPERATING") @db.VarChar(20)
+  note         String?   @db.VarChar(500)
+  sourceUrl    String?   @map("source_url") @db.VarChar(300)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  schedules    schedule[]
+}
+
+model schedule {
+  id            Int                    @id @default(autoincrement()) @db.UnsignedInt
+  title         String                 @db.VarChar(200)
+  scheduleDate  DateTime               @map("schedule_date") @db.Date
+  startHour     Int                    @map("start_hour") @db.TinyInt
+  startMinute   Int                    @map("start_minute") @db.TinyInt
+  poolId        Int?                   @map("pool_id") @db.UnsignedInt
+  categoryGroup String                 @default("SCHEDULE_CATEGORY") @map("category_group") @db.VarChar(30)
+  categoryCode  String                 @map("category_code") @db.VarChar(30)
+  instructorId  Int                    @map("instructor_id")
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @updatedAt @map("updated_at")
+  pool          diving_pool?           @relation(fields: [poolId], references: [id])
+  instructor    user                   @relation("schedule_instructor", fields: [instructorId], references: [id])
+  participants  schedule_participant[]
+
+  @@index([scheduleDate], map: "idx_schedule_date")
+  @@index([instructorId], map: "idx_schedule_instructor")
+}
+
+model schedule_participant {
+  id            Int      @id @default(autoincrement()) @db.UnsignedInt
+  scheduleId    Int      @map("schedule_id") @db.UnsignedInt
+  userId        Int      @map("user_id")
+  waiverSigned  Int      @default(0) @map("waiver_signed") @db.TinyInt
+  medicalSigned Int      @default(0) @map("medical_signed") @db.TinyInt
+  createdAt     DateTime @default(now()) @map("created_at")
+  schedule      schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  user          user     @relation(fields: [userId], references: [id])
+
+  @@unique([scheduleId, userId], map: "uk_schedule_user")
+}
+
+model user_license_achievement {
+  id            Int       @id @default(autoincrement()) @db.UnsignedInt
+  userId        Int       @map("user_id")
+  requirementId Int       @map("requirement_id") @db.UnsignedInt
+  isCompleted   Int       @default(0) @map("is_completed") @db.TinyInt
+  completedAt   DateTime? @map("completed_at")
+  completedBy   Int?      @map("completed_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  user          user                @relation("achievement_user", fields: [userId], references: [id])
+  requirement   license_requirement @relation(fields: [requirementId], references: [id])
+  instructor    user?               @relation("achievement_instructor", fields: [completedBy], references: [id])
+
+  @@unique([userId, requirementId], map: "uk_user_requirement")
+}
+
 model common_code {
   codeGroup   String   @map("code_group") @db.VarChar(30)
   code        String   @db.VarChar(30)
@@ -193,6 +270,7 @@ model license_requirement {
   license      license                @relation(fields: [licenseId], references: [id])
   parent       license_requirement?   @relation("RequirementTree", fields: [parentId], references: [id])
   children     license_requirement[]  @relation("RequirementTree")
+  achievements user_license_achievement[]
 
   @@index([licenseId, sortOrder], map: "idx_req_license")
   @@index([parentId], map: "idx_req_parent")
