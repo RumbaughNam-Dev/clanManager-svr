@@ -56,14 +56,14 @@ export class AllblueService {
       return { success: false, message: '아이디 또는 비밀번호가 올바르지 않습니다' };
     }
 
-    // 중복 로그인 차단
-    if (user.refreshToken) {
-      await this.logHistory(user.id, 'fail_duplicate', ip);
-      return {
-        success: false,
-        message: '다른 기기에서 이미 로그인되어 있습니다. 기존 기기에서 로그아웃 후 다시 시도해주세요.',
-      };
-    }
+    // // 중복 로그인 차단
+    // if (user.refreshToken) {
+    //   await this.logHistory(user.id, 'fail_duplicate', ip);
+    //   return {
+    //     success: false,
+    //     message: '다른 기기에서 이미 로그인되어 있습니다. 기존 기기에서 로그아웃 후 다시 시도해주세요.',
+    //   };
+    // }
 
     await this.logHistory(user.id, 'success', ip);
 
