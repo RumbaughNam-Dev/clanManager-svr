@@ -100,6 +100,7 @@ export class AllblueService {
         user: {
           id: user.id,
           userId: user.userId,
+          nickname: user.nickname,
           userName: user.userName,
           userType: user.userType,
         },
@@ -143,12 +144,12 @@ export class AllblueService {
 
     const instructor = await this.prisma.user.findUnique({
       where: { id: instructorId },
-      select: { userName: true },
+      select: { nickname: true },
     });
 
     const uuid = randomUUID();
     await this.prisma.form_submission.create({
-      data: { uuid, instructorId, formId, diverName: diverName.trim(), instructorName: instructor?.userName ?? null },
+      data: { uuid, instructorId, formId, diverName: diverName.trim(), instructorName: instructor?.nickname ?? null },
     });
 
     return {
@@ -418,7 +419,7 @@ export class AllblueService {
   async getProfile(userId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, userName: true, profileImage: true, profile: true },
+      select: { id: true, nickname: true, userName: true, profileImage: true, profile: true },
     });
 
     if (!user) {
@@ -446,7 +447,8 @@ export class AllblueService {
     return {
       user: {
         id: user.id,
-        name: user.userName,
+        nickname: user.nickname,
+        name: user.userName ?? null,
         profileImage: user.profileImage,
       },
       profile,
@@ -456,10 +458,13 @@ export class AllblueService {
   async updateProfile(userId: number, body: any) {
     const { diverLevel, description, shoesSize, finSize, sta, dynb, dyn, dnf, fim, cwtb, cwt, cnf } = body;
 
-    if (body.name?.trim()) {
+    const userData: any = {};
+    if (body.nickname?.trim()) userData.nickname = body.nickname.trim();
+    if (body.name !== undefined) userData.userName = body.name?.trim() || null;
+    if (Object.keys(userData).length > 0) {
       await this.prisma.user.update({
         where: { id: userId },
-        data: { userName: body.name.trim() },
+        data: userData,
       });
     }
 
@@ -570,8 +575,8 @@ export class AllblueService {
     }
 
     const users = await this.prisma.user.findMany({
-      where: { userName: { contains: q.trim() } },
-      select: { id: true, userId: true, userName: true, phone: true, birthDate: true, profile: { select: { level: true } } },
+      where: { OR: [{ nickname: { contains: q.trim() } }, { userName: { contains: q.trim() } }] },
+      select: { id: true, userId: true, nickname: true, userName: true, phone: true, birthDate: true, profile: { select: { level: true } } },
     });
 
     // 현재 강사의 교육생(참가자로 등록된 적 있는 유저)을 최상단
@@ -589,11 +594,11 @@ export class AllblueService {
       const aStudent = studentIdSet.has(a.userId) ? 0 : 1;
       const bStudent = studentIdSet.has(b.userId) ? 0 : 1;
       if (aStudent !== bStudent) return aStudent - bStudent;
-      return a.userName.localeCompare(b.userName, 'ko');
+      return a.nickname.localeCompare(b.nickname, 'ko');
     });
 
     return {
-      users: sorted.map(u => ({ id: u.id, name: u.userName, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? null })),
+      users: sorted.map(u => ({ id: u.id, nickname: u.nickname, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? null })),
     };
   }
 
@@ -663,8 +668,8 @@ export class AllblueService {
       orderBy: [{ startHour: 'asc' }, { startMinute: 'asc' }],
       include: {
         pool: { select: { name: true } },
-        instructor: { select: { userName: true } },
-        participants: { include: { user: { select: { userName: true } } } },
+        instructor: { select: { nickname: true, userName: true } },
+        participants: { include: { user: { select: { nickname: true, userName: true } } } },
       },
     });
 
@@ -687,9 +692,9 @@ export class AllblueService {
         poolName: s.pool?.name ?? null,
         categoryCode: s.categoryCode,
         categoryName: codeMap.get(s.categoryCode) ?? s.categoryCode,
-        instructorName: s.instructor.userName,
+        instructorName: s.instructor.nickname,
         participantCount: s.participants.length,
-        participantNames: s.participants.map(p => p.user.userName),
+        participantNames: s.participants.map(p => p.user.nickname),
       })),
     };
   }
@@ -716,8 +721,8 @@ export class AllblueService {
       orderBy: [{ scheduleDate: 'asc' }, { startHour: 'asc' }, { startMinute: 'asc' }],
       include: {
         pool: { select: { name: true } },
-        instructor: { select: { userName: true } },
-        participants: { include: { user: { select: { userName: true } } } },
+        instructor: { select: { nickname: true, userName: true } },
+        participants: { include: { user: { select: { nickname: true, userName: true } } } },
       },
     });
 
@@ -742,9 +747,9 @@ export class AllblueService {
           poolName: s.pool?.name ?? null,
           categoryCode: s.categoryCode,
           categoryName: codeMap.get(s.categoryCode) ?? s.categoryCode,
-          instructorName: s.instructor.userName,
+          instructorName: s.instructor.nickname,
           participantCount: s.participants.length,
-          participantNames: s.participants.map(p => p.user.userName),
+          participantNames: s.participants.map(p => p.user.nickname),
         };
       }),
     };
@@ -840,13 +845,14 @@ export class AllblueService {
     const requests = await this.prisma.cert_request.findMany({
       where: { status: 'pending' },
       orderBy: { createdAt: 'desc' },
-      include: { user: { select: { userId: true, userName: true, birthDate: true } } },
+      include: { user: { select: { userId: true, nickname: true, userName: true, birthDate: true } } },
     });
 
     return {
       requests: requests.map(r => ({
         id: r.id,
         userId: r.user.userId,
+        nickname: r.user.nickname,
         userName: r.user.userName,
         birthDate: r.user.birthDate,
         imageUrl: r.imageUrl,
@@ -927,6 +933,7 @@ export class AllblueService {
             userId: request.userId,
             password: request.password ?? '',
             userName: request.name,
+            nickname: request.name,
             phone: request.phone,
             userType: Number(request.isInstructor) === 1 ? 'instructor' : 'user',
             status: 'approved',
@@ -956,10 +963,10 @@ export class AllblueService {
     }
 
     // 2. 유효성 검증
-    const { name, birthDate, phone, kakaoTalkId, instagramId } = body;
+    const { nickname, birthDate, phone, kakaoTalkId, instagramId } = body;
 
-    if (!name?.trim()) {
-      return { error: 'VALIDATION_ERROR', message: '이름을 입력해주세요.' };
+    if (!nickname?.trim()) {
+      return { error: 'VALIDATION_ERROR', message: '닉네임을 입력해주세요.' };
     }
 
     // birthDate 검증
@@ -996,7 +1003,7 @@ export class AllblueService {
       data: {
         userId: `${provider}_${socialId}`,
         password: randomPassword,
-        userName: name.trim(),
+        nickname: nickname.trim(),
         email: decoded.email,
         phone: phone?.trim() || null,
         kakaoId: decoded.kakaoId ?? null,
@@ -1023,7 +1030,8 @@ export class AllblueService {
       token,
       user: {
         id: user.id,
-        name: user.userName,
+        nickname: user.nickname,
+        name: user.userName ?? null,
         profileImage: user.profileImage,
       },
     };
@@ -1083,7 +1091,8 @@ export class AllblueService {
         isNewUser: false,
         token,
         userId: existingUser.userId,
-        name: existingUser.userName,
+        nickname: existingUser.nickname,
+        name: existingUser.userName ?? null,
         profileImage: existingUser.profileImage,
       };
     }
@@ -1164,7 +1173,8 @@ export class AllblueService {
         isNewUser: false,
         token,
         userId: existingUser.userId,
-        name: existingUser.userName,
+        nickname: existingUser.nickname,
+        name: existingUser.userName ?? null,
         profileImage: existingUser.profileImage,
       };
     }
@@ -1238,7 +1248,8 @@ export class AllblueService {
         isNewUser: false,
         token,
         userId: existingUser.userId,
-        name: existingUser.userName,
+        nickname: existingUser.nickname,
+        name: existingUser.userName ?? null,
         profileImage: existingUser.profileImage,
       };
     }
@@ -1333,7 +1344,8 @@ export class AllblueService {
         isNewUser: false,
         token,
         userId: existingUser.userId,
-        name: existingUser.userName,
+        nickname: existingUser.nickname,
+        name: existingUser.userName ?? null,
       };
     }
 
