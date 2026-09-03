@@ -964,74 +964,80 @@ export class AllblueService {
         select: { id: true, nickname: true },
       });
 
-      // 2. 기존 참석자 조회
-      const existingParticipants = await tx.schedule_participant.findMany({
-        where: { scheduleId: id },
-      });
-      const existingUserIds = existingParticipants.filter(p => p.userId).map(p => p.userId!);
-      const existingGuestIds = existingParticipants.filter(p => p.guestId).map(p => p.guestId!);
-
-      // participantIds(INT) → userId(VARCHAR) 변환
-      const newUsers = participantIds?.length > 0
-        ? await tx.user.findMany({
-            where: { id: { in: participantIds } },
-            select: { id: true, userId: true, nickname: true, userName: true },
-          })
-        : [];
-      const newUserIds = newUsers.map(u => u.userId);
-
-      const removedUserIds = existingUserIds.filter(uid => !newUserIds.includes(uid));
-      const addedUserIds = newUserIds.filter(uid => !existingUserIds.includes(uid));
-
-      // 3. 제거된 앱 사용자 처리
-      for (const removedUserId of removedUserIds) {
-        await tx.form_submission.deleteMany({
-          where: { scheduleId: id, participantUserId: removedUserId, status: { not: 'submitted' } },
+      // 2. 앱 사용자 참석자 처리 (participantIds가 명시적으로 전달된 경우만)
+      if (participantIds !== undefined && participantIds !== null) {
+        const existingParticipants = await tx.schedule_participant.findMany({
+          where: { scheduleId: id, userId: { not: null } },
         });
-        await tx.form_submission.updateMany({
-          where: { scheduleId: id, participantUserId: removedUserId, status: 'submitted' },
-          data: { scheduleId: null },
-        });
-        await tx.schedule_participant.deleteMany({
-          where: { scheduleId: id, userId: removedUserId },
-        });
+        const existingUserIds = existingParticipants.map(p => p.userId!);
+
+        const newUsers = participantIds.length > 0
+          ? await tx.user.findMany({
+              where: { id: { in: participantIds } },
+              select: { id: true, userId: true, nickname: true, userName: true },
+            })
+          : [];
+        const newUserIds = newUsers.map(u => u.userId);
+
+        const removedUserIds = existingUserIds.filter(uid => !newUserIds.includes(uid));
+        const addedUserIds = newUserIds.filter(uid => !existingUserIds.includes(uid));
+
+        // 제거된 앱 사용자 처리
+        for (const removedUserId of removedUserIds) {
+          await tx.form_submission.deleteMany({
+            where: { scheduleId: id, participantUserId: removedUserId, status: { not: 'submitted' } },
+          });
+          await tx.form_submission.updateMany({
+            where: { scheduleId: id, participantUserId: removedUserId, status: 'submitted' },
+            data: { scheduleId: null },
+          });
+          await tx.schedule_participant.deleteMany({
+            where: { scheduleId: id, userId: removedUserId },
+          });
+        }
+
+        // 추가된 앱 사용자 INSERT
+        for (const addedUserId of addedUserIds) {
+          const user = newUsers.find(u => u.userId === addedUserId)!;
+          await tx.schedule_participant.create({
+            data: { scheduleId: id, userId: addedUserId },
+          });
+          await tx.form_submission.createMany({
+            data: ['liability', 'medical'].map(formId => ({
+              uuid: randomUUID(),
+              formId,
+              diverName: user.nickname ?? user.userName ?? '',
+              instructorId: instructor!.id,
+              instructorName: instructor!.nickname,
+              scheduleId: id,
+              participantUserId: addedUserId,
+            })),
+          });
+        }
       }
 
-      // 4. 기존 게스트 전체 제거 후 재생성
-      for (const guestId of existingGuestIds) {
-        await tx.form_submission.deleteMany({
-          where: { scheduleId: id, participantGuestId: guestId, status: { not: 'submitted' } },
+      // 3. 게스트 참석자 처리 (guests가 명시적으로 전달된 경우만)
+      if (guests !== undefined && guests !== null) {
+        const existingGuestParticipants = await tx.schedule_participant.findMany({
+          where: { scheduleId: id, guestId: { not: null } },
         });
-        await tx.form_submission.updateMany({
-          where: { scheduleId: id, participantGuestId: guestId, status: 'submitted' },
-          data: { scheduleId: null },
-        });
-        await tx.schedule_participant.deleteMany({
-          where: { scheduleId: id, guestId },
-        });
-      }
+        const existingGuestIds = existingGuestParticipants.map(p => p.guestId!);
 
-      // 5. 추가된 앱 사용자 INSERT
-      for (const addedUserId of addedUserIds) {
-        const user = newUsers.find(u => u.userId === addedUserId)!;
-        await tx.schedule_participant.create({
-          data: { scheduleId: id, userId: addedUserId },
-        });
-        await tx.form_submission.createMany({
-          data: ['liability', 'medical'].map(formId => ({
-            uuid: randomUUID(),
-            formId,
-            diverName: user.nickname ?? user.userName ?? '',
-            instructorId: instructor!.id,
-            instructorName: instructor!.nickname,
-            scheduleId: id,
-            participantUserId: addedUserId,
-          })),
-        });
-      }
+        // 기존 게스트 제거
+        for (const guestId of existingGuestIds) {
+          await tx.form_submission.deleteMany({
+            where: { scheduleId: id, participantGuestId: guestId, status: { not: 'submitted' } },
+          });
+          await tx.form_submission.updateMany({
+            where: { scheduleId: id, participantGuestId: guestId, status: 'submitted' },
+            data: { scheduleId: null },
+          });
+          await tx.schedule_participant.deleteMany({
+            where: { scheduleId: id, guestId },
+          });
+        }
 
-      // 6. 새 게스트 INSERT
-      if (guests?.length > 0) {
+        // 새 게스트 INSERT
         for (const g of guests) {
           if (!g.nickname?.trim()) continue;
           const guest = await tx.guest_user.create({
