@@ -755,6 +755,63 @@ export class AllblueService {
     };
   }
 
+  async getScheduleDetail(id: number, userId: string) {
+    if (!id || isNaN(id)) {
+      return { success: false, message: '유효하지 않은 일정 ID입니다.' };
+    }
+
+    const schedule = await this.prisma.schedule.findUnique({
+      where: { id },
+      include: {
+        pool: { select: { name: true } },
+        instructor: { select: { nickname: true } },
+        participants: { include: { user: { select: { id: true, nickname: true, userName: true } } } },
+      },
+    });
+
+    if (!schedule) {
+      return { success: false, message: '존재하지 않는 일정입니다.' };
+    }
+
+    // 권한 체크: 강사이거나 참석자여야 함
+    const isInstructor = schedule.instructorId === userId;
+    const isParticipant = schedule.participants.some(p => p.userId === userId);
+    if (!isInstructor && !isParticipant) {
+      return { success: false, statusCode: 403, message: '조회 권한이 없습니다.' };
+    }
+
+    // categoryName 조회
+    const code = await this.prisma.common_code.findUnique({
+      where: { codeGroup_code: { codeGroup: 'SCHEDULE_TYPE', code: schedule.categoryCode } },
+    });
+
+    const d = schedule.scheduleDate;
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    return {
+      schedule: {
+        id: schedule.id,
+        title: schedule.title,
+        scheduleDate: dateStr,
+        startHour: schedule.startHour,
+        startMinute: schedule.startMinute,
+        poolName: schedule.pool?.name ?? '',
+        categoryCode: schedule.categoryCode,
+        categoryName: code?.nameKo ?? code?.name ?? schedule.categoryCode,
+        instructorName: schedule.instructor.nickname,
+        participants: schedule.participants.map(p => ({
+          id: p.user.id,
+          nickname: p.user.nickname,
+          name: p.user.userName ?? null,
+          waiverSigned: false,
+          medicalSigned: false,
+          waiverUrl: null,
+          medicalUrl: null,
+        })),
+      },
+    };
+  }
+
   async getCodes(group: string) {
     if (!group?.trim()) {
       return { success: false, message: 'group 파라미터는 필수입니다.' };
