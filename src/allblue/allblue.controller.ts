@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Put, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AllblueService } from './allblue.service';
 import { AllblueJwtAuthGuard } from './allblue-jwt-auth.guard';
@@ -133,6 +133,12 @@ export class AllblueController {
   @Get('schedule/:id')
   getScheduleDetail(@Param('id') id: string, @Req() req: any) {
     return this.allblueService.getScheduleDetail(Number(id), req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Delete('schedule/:id')
+  deleteSchedule(@Param('id') id: string, @Req() req: any) {
+    return this.allblueService.deleteSchedule(Number(id), req.user.userId);
   }
 
   @Get('associations')

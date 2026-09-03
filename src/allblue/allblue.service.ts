@@ -850,6 +850,22 @@ export class AllblueService {
     };
   }
 
+  async deleteSchedule(id: number, userId: string) {
+    const schedule = await this.prisma.schedule.findUnique({ where: { id } });
+
+    if (!schedule) {
+      return { success: false, statusCode: 404, message: '존재하지 않는 일정입니다.' };
+    }
+
+    if (schedule.instructorId !== userId) {
+      return { success: false, statusCode: 403, message: '삭제 권한이 없습니다.' };
+    }
+
+    await this.prisma.schedule.delete({ where: { id } });
+
+    return { success: true };
+  }
+
   async getCodes(group: string) {
     if (!group?.trim()) {
       return { success: false, message: 'group 파라미터는 필수입니다.' };
