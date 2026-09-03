@@ -116,7 +116,7 @@ model form_submission {
   participantGuestId  Int?     @map("participant_guest_id")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
-  schedule           schedule?   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  schedule           schedule?   @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   participantUser    user?       @relation("form_participant_user", fields: [participantUserId], references: [userId])
   participantGuest   guest_user? @relation(fields: [participantGuestId], references: [id])
 

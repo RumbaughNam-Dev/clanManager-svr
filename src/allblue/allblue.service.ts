@@ -899,7 +899,20 @@ export class AllblueService {
       return { success: false, statusCode: 403, message: '삭제 권한이 없습니다.' };
     }
 
-    await this.prisma.schedule.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      // submitted 아닌 서류 삭제
+      await tx.form_submission.deleteMany({
+        where: { scheduleId: id, status: { not: 'submitted' } },
+      });
+      // submitted 서류는 연결 해제 (데이터 보존)
+      await tx.form_submission.updateMany({
+        where: { scheduleId: id, status: 'submitted' },
+        data: { scheduleId: null },
+      });
+      // 참석자 → 일정 삭제
+      await tx.schedule_participant.deleteMany({ where: { scheduleId: id } });
+      await tx.schedule.delete({ where: { id } });
+    });
 
     return { success: true };
   }
