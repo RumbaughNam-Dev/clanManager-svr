@@ -41,6 +41,7 @@ model user {
   achievements            user_license_achievement[] @relation("achievement_user")
   instructedAchievements  user_license_achievement[] @relation("achievement_instructor")
   linkedGuests            guest_user[]
+  formParticipations      form_submission[]          @relation("form_participant_user")
 }
 
 model login_history {
@@ -110,10 +111,18 @@ model form_submission {
   doctorAddress       String?  @db.VarChar(255)
   doctorAddressDetail String?  @db.VarChar(255)
   doctorChecks        Json?
+  scheduleId          Int?     @map("schedule_id")
+  participantUserId   String?  @map("participant_user_id") @db.VarChar(50)
+  participantGuestId  Int?     @map("participant_guest_id")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  schedule           schedule?   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  participantUser    user?       @relation("form_participant_user", fields: [participantUserId], references: [userId])
+  participantGuest   guest_user? @relation(fields: [participantGuestId], references: [id])
 
   @@index([instructorId])
+  @@index([scheduleId, participantUserId, formId], map: "idx_fs_schedule_user")
+  @@index([scheduleId, participantGuestId, formId], map: "idx_fs_schedule_guest")
 }
 
 model cert_request {
@@ -165,8 +174,9 @@ model schedule {
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt @map("updated_at")
   pool          diving_pool?           @relation(fields: [poolId], references: [id])
-  instructor    user                   @relation("schedule_instructor", fields: [instructorId], references: [userId])
-  participants  schedule_participant[]
+  instructor      user                   @relation("schedule_instructor", fields: [instructorId], references: [userId])
+  participants    schedule_participant[]
+  formSubmissions form_submission[]
 }
 
 model schedule_participant {
@@ -188,8 +198,9 @@ model guest_user {
   phone        String?                @db.VarChar(20)
   linkedUserId String?                @map("linked_user_id") @db.VarChar(50)
   createdAt    DateTime               @default(now()) @map("created_at")
-  linkedUser   user?                  @relation(fields: [linkedUserId], references: [userId])
-  participants schedule_participant[]
+  linkedUser       user?                  @relation(fields: [linkedUserId], references: [userId])
+  participants     schedule_participant[]
+  formSubmissions  form_submission[]
 }
 
 model user_license_achievement {

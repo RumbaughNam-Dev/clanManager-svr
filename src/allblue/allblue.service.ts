@@ -631,11 +631,17 @@ export class AllblueService {
         },
       });
 
+      // 강사 INT id 조회 (form_submission.instructorId용)
+      const instructor = await tx.user.findUnique({
+        where: { userId: instructorUserId },
+        select: { id: true, nickname: true },
+      });
+
       if (participantIds?.length > 0) {
         // user.id(INT) → user.userId(VARCHAR) 변환
         const users = await tx.user.findMany({
           where: { id: { in: participantIds } },
-          select: { userId: true },
+          select: { userId: true, nickname: true, userName: true },
         });
 
         await tx.schedule_participant.createMany({
@@ -644,6 +650,21 @@ export class AllblueService {
             userId: u.userId,
           })),
         });
+
+        // 면책동의서·의료진술서 자동 생성
+        for (const u of users) {
+          await tx.form_submission.createMany({
+            data: ['liability', 'medical'].map(formId => ({
+              uuid: randomUUID(),
+              formId,
+              diverName: u.nickname ?? u.userName ?? '',
+              instructorId: instructor!.id,
+              instructorName: instructor!.nickname,
+              scheduleId: schedule.id,
+              participantUserId: u.userId,
+            })),
+          });
+        }
       }
 
       if (guests?.length > 0) {
@@ -660,6 +681,19 @@ export class AllblueService {
               scheduleId: schedule.id,
               guestId: guest.id,
             },
+          });
+
+          // 면책동의서·의료진술서 자동 생성
+          await tx.form_submission.createMany({
+            data: ['liability', 'medical'].map(formId => ({
+              uuid: randomUUID(),
+              formId,
+              diverName: guest.nickname,
+              instructorId: instructor!.id,
+              instructorName: instructor!.nickname,
+              scheduleId: schedule.id,
+              participantGuestId: guest.id,
+            })),
           });
         }
       }
@@ -789,6 +823,9 @@ export class AllblueService {
             guest: { select: { id: true, nickname: true } },
           },
         },
+        formSubmissions: {
+          select: { formId: true, uuid: true, status: true, participantUserId: true, participantGuestId: true },
+        },
       },
     });
 
@@ -823,27 +860,28 @@ export class AllblueService {
         categoryName: code?.nameKo ?? code?.name ?? schedule.categoryCode,
         instructorName: schedule.instructor.nickname,
         participants: schedule.participants.map(p => {
-          if (p.user) {
-            return {
-              id: p.user.id,
-              nickname: p.user.nickname,
-              name: p.user.userName ?? null,
-              isGuest: false,
-              waiverSigned: false,
-              medicalSigned: false,
-              waiverUrl: null,
-              medicalUrl: null,
-            };
-          }
+          const isGuest = !p.user;
+          const waiver = schedule.formSubmissions.find(f =>
+            f.formId === 'liability' &&
+            (isGuest ? f.participantGuestId === p.guestId : f.participantUserId === p.userId),
+          );
+          const medical = schedule.formSubmissions.find(f =>
+            f.formId === 'medical' &&
+            (isGuest ? f.participantGuestId === p.guestId : f.participantUserId === p.userId),
+          );
+          const baseUrl = 'https://rumbaugh.co.kr/form';
+
           return {
-            id: p.guest!.id,
-            nickname: p.guest!.nickname,
-            name: null,
-            isGuest: true,
-            waiverSigned: false,
-            medicalSigned: false,
-            waiverUrl: null,
-            medicalUrl: null,
+            id: isGuest ? p.guest!.id : p.user!.id,
+            nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
+            name: isGuest ? null : (p.user!.userName ?? null),
+            isGuest,
+            waiverSigned: waiver?.status === 'submitted',
+            medicalSigned: medical?.status === 'submitted',
+            waiverUrl: waiver?.status === 'submitted' ? `${baseUrl}/${waiver.uuid}` : null,
+            medicalUrl: medical?.status === 'submitted' ? `${baseUrl}/${medical.uuid}` : null,
+            waiverUuid: waiver?.uuid ?? null,
+            medicalUuid: medical?.uuid ?? null,
           };
         }),
       },
