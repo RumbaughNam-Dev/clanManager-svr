@@ -136,6 +136,12 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Put('schedule/:id')
+  updateSchedule(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+    return this.allblueService.updateSchedule(Number(id), body, req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Delete('schedule/:id')
   deleteSchedule(@Param('id') id: string, @Req() req: any) {
     return this.allblueService.deleteSchedule(Number(id), req.user.userId);

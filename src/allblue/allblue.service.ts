@@ -917,6 +917,144 @@ export class AllblueService {
     return { success: true };
   }
 
+  async updateSchedule(id: number, body: any, instructorUserId: string) {
+    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds, guests } = body;
+
+    const schedule = await this.prisma.schedule.findUnique({ where: { id } });
+    if (!schedule) {
+      return { success: false, statusCode: 404, message: '존재하지 않는 일정입니다.' };
+    }
+    if (schedule.instructorId !== instructorUserId) {
+      return { success: false, statusCode: 403, message: '수정 권한이 없습니다.' };
+    }
+
+    if (!title?.trim() || title.trim().length > 100) {
+      return { success: false, message: '제목을 입력해주세요. (최대 100자)' };
+    }
+    if (!scheduleDate || !/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) {
+      return { success: false, message: '날짜를 YYYY-MM-DD 형식으로 입력해주세요.' };
+    }
+    if (!categoryCode) {
+      return { success: false, message: '분류를 선택해주세요.' };
+    }
+    if (startHour < 0 || startHour > 23 || startMinute < 0 || startMinute > 59) {
+      return { success: false, message: '시간을 올바르게 입력해주세요.' };
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. schedule 본문 수정
+      await tx.schedule.update({
+        where: { id },
+        data: {
+          title: title.trim(),
+          scheduleDate: new Date(scheduleDate),
+          startHour,
+          startMinute,
+          poolId: poolId ?? null,
+          categoryCode,
+        },
+      });
+
+      // 강사 정보 조회 (form_submission용)
+      const instructor = await tx.user.findUnique({
+        where: { userId: instructorUserId },
+        select: { id: true, nickname: true },
+      });
+
+      // 2. 기존 참석자 조회
+      const existingParticipants = await tx.schedule_participant.findMany({
+        where: { scheduleId: id },
+      });
+      const existingUserIds = existingParticipants.filter(p => p.userId).map(p => p.userId!);
+      const existingGuestIds = existingParticipants.filter(p => p.guestId).map(p => p.guestId!);
+
+      // participantIds(INT) → userId(VARCHAR) 변환
+      const newUsers = participantIds?.length > 0
+        ? await tx.user.findMany({
+            where: { id: { in: participantIds } },
+            select: { id: true, userId: true, nickname: true, userName: true },
+          })
+        : [];
+      const newUserIds = newUsers.map(u => u.userId);
+
+      const removedUserIds = existingUserIds.filter(uid => !newUserIds.includes(uid));
+      const addedUserIds = newUserIds.filter(uid => !existingUserIds.includes(uid));
+
+      // 3. 제거된 앱 사용자 처리
+      for (const removedUserId of removedUserIds) {
+        await tx.form_submission.deleteMany({
+          where: { scheduleId: id, participantUserId: removedUserId, status: { not: 'submitted' } },
+        });
+        await tx.form_submission.updateMany({
+          where: { scheduleId: id, participantUserId: removedUserId, status: 'submitted' },
+          data: { scheduleId: null },
+        });
+        await tx.schedule_participant.deleteMany({
+          where: { scheduleId: id, userId: removedUserId },
+        });
+      }
+
+      // 4. 기존 게스트 전체 제거 후 재생성
+      for (const guestId of existingGuestIds) {
+        await tx.form_submission.deleteMany({
+          where: { scheduleId: id, participantGuestId: guestId, status: { not: 'submitted' } },
+        });
+        await tx.form_submission.updateMany({
+          where: { scheduleId: id, participantGuestId: guestId, status: 'submitted' },
+          data: { scheduleId: null },
+        });
+        await tx.schedule_participant.deleteMany({
+          where: { scheduleId: id, guestId },
+        });
+      }
+
+      // 5. 추가된 앱 사용자 INSERT
+      for (const addedUserId of addedUserIds) {
+        const user = newUsers.find(u => u.userId === addedUserId)!;
+        await tx.schedule_participant.create({
+          data: { scheduleId: id, userId: addedUserId },
+        });
+        await tx.form_submission.createMany({
+          data: ['liability', 'medical'].map(formId => ({
+            uuid: randomUUID(),
+            formId,
+            diverName: user.nickname ?? user.userName ?? '',
+            instructorId: instructor!.id,
+            instructorName: instructor!.nickname,
+            scheduleId: id,
+            participantUserId: addedUserId,
+          })),
+        });
+      }
+
+      // 6. 새 게스트 INSERT
+      if (guests?.length > 0) {
+        for (const g of guests) {
+          if (!g.nickname?.trim()) continue;
+          const guest = await tx.guest_user.create({
+            data: { nickname: g.nickname.trim(), phone: g.phone?.trim() || null },
+          });
+          await tx.schedule_participant.create({
+            data: { scheduleId: id, guestId: guest.id },
+          });
+          await tx.form_submission.createMany({
+            data: ['liability', 'medical'].map(formId => ({
+              uuid: randomUUID(),
+              formId,
+              diverName: guest.nickname,
+              instructorId: instructor!.id,
+              instructorName: instructor!.nickname,
+              scheduleId: id,
+              participantGuestId: guest.id,
+            })),
+          });
+        }
+      }
+
+      return { success: true };
+    });
+  }
+
   async getCodes(group: string) {
     if (!group?.trim()) {
       return { success: false, message: 'group 파라미터는 필수입니다.' };
