@@ -834,9 +834,10 @@ export class AllblueService {
     }
 
     // 권한 체크: 강사이거나 참석자여야 함
-    const isInstructor = schedule.instructorId === userId;
-    const isParticipant = schedule.participants.some(p => p.userId === userId);
-    if (!isInstructor && !isParticipant) {
+    const isOwner = schedule.instructorId === userId;
+    const myParticipant = schedule.participants.find(p => p.userId === userId);
+    const isParticipant = !!myParticipant;
+    if (!isOwner && !isParticipant) {
       return { success: false, statusCode: 403, message: '조회 권한이 없습니다.' };
     }
 
@@ -852,6 +853,8 @@ export class AllblueService {
       schedule: {
         id: schedule.id,
         title: schedule.title,
+        isOwner,
+        myParticipantId: myParticipant?.user?.id ?? null,
         scheduleDate: dateStr,
         startHour: schedule.startHour,
         startMinute: schedule.startMinute,
