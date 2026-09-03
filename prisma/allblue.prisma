@@ -40,6 +40,7 @@ model user {
   participations          schedule_participant[]
   achievements            user_license_achievement[] @relation("achievement_user")
   instructedAchievements  user_license_achievement[] @relation("achievement_instructor")
+  linkedGuests            guest_user[]
 }
 
 model login_history {
@@ -169,14 +170,26 @@ model schedule {
 }
 
 model schedule_participant {
-  id          Int      @id @default(autoincrement()) @db.UnsignedInt
-  scheduleId  Int      @map("schedule_id") @db.UnsignedInt
-  userId      String   @map("user_id") @db.VarChar(50)
-  createdAt   DateTime @default(now()) @map("created_at")
-  schedule    schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  user        user     @relation(fields: [userId], references: [userId])
+  id          Int         @id @default(autoincrement()) @db.UnsignedInt
+  scheduleId  Int         @map("schedule_id") @db.UnsignedInt
+  userId      String?     @map("user_id") @db.VarChar(50)
+  guestId     Int?        @map("guest_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  schedule    schedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  user        user?       @relation(fields: [userId], references: [userId])
+  guest       guest_user? @relation(fields: [guestId], references: [id])
 
   @@unique([scheduleId, userId], map: "uk_schedule_user")
+}
+
+model guest_user {
+  id           Int                    @id @default(autoincrement())
+  nickname     String                 @db.VarChar(50)
+  phone        String?                @db.VarChar(20)
+  linkedUserId String?                @map("linked_user_id") @db.VarChar(50)
+  createdAt    DateTime               @default(now()) @map("created_at")
+  linkedUser   user?                  @relation(fields: [linkedUserId], references: [userId])
+  participants schedule_participant[]
 }
 
 model user_license_achievement {

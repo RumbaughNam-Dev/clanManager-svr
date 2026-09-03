@@ -603,7 +603,7 @@ export class AllblueService {
   }
 
   async createSchedule(body: any, instructorUserId: string) {
-    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds } = body;
+    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds, guests } = body;
 
     if (!title?.trim() || title.trim().length > 100) {
       return { success: false, message: '제목을 입력해주세요. (최대 100자)' };
@@ -646,6 +646,24 @@ export class AllblueService {
         });
       }
 
+      if (guests?.length > 0) {
+        for (const g of guests) {
+          if (!g.nickname?.trim()) continue;
+          const guest = await tx.guest_user.create({
+            data: {
+              nickname: g.nickname.trim(),
+              phone: g.phone?.trim() || null,
+            },
+          });
+          await tx.schedule_participant.create({
+            data: {
+              scheduleId: schedule.id,
+              guestId: guest.id,
+            },
+          });
+        }
+      }
+
       return { success: true, scheduleId: schedule.id };
     });
   }
@@ -669,7 +687,7 @@ export class AllblueService {
       include: {
         pool: { select: { name: true } },
         instructor: { select: { nickname: true, userName: true } },
-        participants: { include: { user: { select: { nickname: true, userName: true } } } },
+        participants: { include: { user: { select: { nickname: true, userName: true } }, guest: { select: { nickname: true } } } },
       },
     });
 
@@ -694,7 +712,7 @@ export class AllblueService {
         categoryName: codeMap.get(s.categoryCode) ?? s.categoryCode,
         instructorName: s.instructor.nickname,
         participantCount: s.participants.length,
-        participantNames: s.participants.map(p => p.user.nickname),
+        participantNames: s.participants.map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
       })),
     };
   }
@@ -722,7 +740,7 @@ export class AllblueService {
       include: {
         pool: { select: { name: true } },
         instructor: { select: { nickname: true, userName: true } },
-        participants: { include: { user: { select: { nickname: true, userName: true } } } },
+        participants: { include: { user: { select: { nickname: true, userName: true } }, guest: { select: { nickname: true } } } },
       },
     });
 
@@ -749,7 +767,7 @@ export class AllblueService {
           categoryName: codeMap.get(s.categoryCode) ?? s.categoryCode,
           instructorName: s.instructor.nickname,
           participantCount: s.participants.length,
-          participantNames: s.participants.map(p => p.user.nickname),
+          participantNames: s.participants.map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
         };
       }),
     };
@@ -765,7 +783,12 @@ export class AllblueService {
       include: {
         pool: { select: { name: true } },
         instructor: { select: { nickname: true } },
-        participants: { include: { user: { select: { id: true, nickname: true, userName: true } } } },
+        participants: {
+          include: {
+            user: { select: { id: true, nickname: true, userName: true } },
+            guest: { select: { id: true, nickname: true } },
+          },
+        },
       },
     });
 
@@ -799,15 +822,30 @@ export class AllblueService {
         categoryCode: schedule.categoryCode,
         categoryName: code?.nameKo ?? code?.name ?? schedule.categoryCode,
         instructorName: schedule.instructor.nickname,
-        participants: schedule.participants.map(p => ({
-          id: p.user.id,
-          nickname: p.user.nickname,
-          name: p.user.userName ?? null,
-          waiverSigned: false,
-          medicalSigned: false,
-          waiverUrl: null,
-          medicalUrl: null,
-        })),
+        participants: schedule.participants.map(p => {
+          if (p.user) {
+            return {
+              id: p.user.id,
+              nickname: p.user.nickname,
+              name: p.user.userName ?? null,
+              isGuest: false,
+              waiverSigned: false,
+              medicalSigned: false,
+              waiverUrl: null,
+              medicalUrl: null,
+            };
+          }
+          return {
+            id: p.guest!.id,
+            nickname: p.guest!.nickname,
+            name: null,
+            isGuest: true,
+            waiverSigned: false,
+            medicalSigned: false,
+            waiverUrl: null,
+            medicalUrl: null,
+          };
+        }),
       },
     };
   }
