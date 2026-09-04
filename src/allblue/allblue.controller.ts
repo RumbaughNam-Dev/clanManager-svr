@@ -147,6 +147,12 @@ export class AllblueController {
     return this.allblueService.deleteSchedule(Number(id), req.user.userId);
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('user/:id/achievements')
+  getUserAchievements(@Param('id') id: string) {
+    return this.allblueService.getUserAchievements(Number(id));
+  }
+
   @Get('associations')
   getAssociations() {
     return this.allblueService.getAssociations();

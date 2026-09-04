@@ -1070,6 +1070,87 @@ export class AllblueService {
     });
   }
 
+  async getUserAchievements(userIntId: number) {
+    // user.id(INT) → user.userId(VARCHAR) 조회
+    const user = await this.prisma.user.findUnique({
+      where: { id: userIntId },
+      select: { userId: true },
+    });
+    if (!user) {
+      return { success: false, message: '사용자를 찾을 수 없습니다.' };
+    }
+
+    // user_license (userId: VARCHAR)로 진행 중인 자격증 조회
+    const userLicenses = await this.prisma.user_license.findMany({
+      where: { userId: user.userId },
+      include: {
+        license: {
+          include: {
+            association: { select: { code: true, name: true, nameKo: true } },
+            requirements: {
+              orderBy: { sortOrder: 'asc' },
+              select: {
+                id: true, parentId: true, reqGroup: true, reqType: true, code: true,
+                name: true, nameKo: true, unit: true,
+                minValue: true, maxValue: true, displayValue: true,
+                isOptional: true, sortOrder: true, note: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // user_license_achievement (userId: INT)로 완료된 항목 조회
+    const achievements = await this.prisma.user_license_achievement.findMany({
+      where: { userId: userIntId },
+      select: { requirementId: true, isCompleted: true, completedAt: true },
+    });
+    const achievementMap = new Map(achievements.map(a => [a.requirementId, a]));
+
+    return {
+      licenses: userLicenses.map(ul => ({
+        id: ul.id,
+        status: ul.status,
+        startedAt: ul.startedAt?.toISOString() ?? null,
+        completedAt: ul.completedAt?.toISOString() ?? null,
+        certificateNumber: ul.certificateNumber,
+        license: {
+          id: ul.license.id,
+          code: ul.license.code,
+          name: ul.license.name,
+          nameKo: ul.license.nameKo,
+          association: ul.license.association,
+        },
+        requirements: ul.license.requirements.map(r => {
+          const achievement = achievementMap.get(r.id);
+          return {
+            id: r.id,
+            parentId: r.parentId,
+            reqGroup: r.reqGroup,
+            reqType: r.reqType,
+            code: r.code,
+            name: r.name,
+            nameKo: r.nameKo,
+            unit: r.unit,
+            minValue: r.minValue ? Number(r.minValue) : null,
+            maxValue: r.maxValue ? Number(r.maxValue) : null,
+            displayValue: r.displayValue,
+            isOptional: r.isOptional,
+            sortOrder: r.sortOrder,
+            note: r.note,
+            isCompleted: achievement?.isCompleted === 1,
+            completedAt: achievement?.completedAt?.toISOString() ?? null,
+          };
+        }),
+        completedCount: achievements.filter(a =>
+          a.isCompleted === 1 && ul.license.requirements.some(r => r.id === a.requirementId),
+        ).length,
+        totalCount: ul.license.requirements.length,
+      })),
+    };
+  }
+
   async getCodes(group: string) {
     if (!group?.trim()) {
       return { success: false, message: 'group 파라미터는 필수입니다.' };
