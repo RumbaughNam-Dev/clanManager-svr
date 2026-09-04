@@ -42,6 +42,28 @@ model user {
   instructedAchievements  user_license_achievement[] @relation("achievement_instructor")
   linkedGuests            guest_user[]
   formParticipations      form_submission[]          @relation("form_participant_user")
+  licenses                user_license[]             @relation("ul_user")
+  instructedLicenses      user_license[]             @relation("ul_instructor")
+}
+
+model user_license {
+  id                Int       @id @default(autoincrement()) @db.UnsignedInt
+  userId            String    @map("user_id") @db.VarChar(50)
+  licenseId         Int       @map("license_id") @db.UnsignedInt
+  status            String    @default("IN_PROGRESS") @db.VarChar(20)
+  startedAt         DateTime? @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+  certificateNumber String?   @map("certificate_number") @db.VarChar(100)
+  instructorId      String?   @map("instructor_id") @db.VarChar(50)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  user              user      @relation("ul_user", fields: [userId], references: [userId])
+  license           license   @relation(fields: [licenseId], references: [id])
+  instructor        user?     @relation("ul_instructor", fields: [instructorId], references: [userId])
+
+  @@index([userId], map: "idx_ul_user")
+  @@index([licenseId], map: "idx_ul_license")
+  @@index([instructorId], map: "idx_ul_instructor")
 }
 
 model login_history {
@@ -262,6 +284,7 @@ model license {
   updatedAt     DateTime              @updatedAt @map("updated_at")
   association   association           @relation(fields: [associationId], references: [id])
   requirements  license_requirement[]
+  userLicenses  user_license[]
 
   @@unique([associationId, levelOrder], map: "uk_license_assoc_level")
   @@index([associationId], map: "idx_license_assoc")

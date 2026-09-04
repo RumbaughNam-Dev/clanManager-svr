@@ -819,7 +819,12 @@ export class AllblueService {
         instructor: { select: { nickname: true } },
         participants: {
           include: {
-            user: { select: { id: true, nickname: true, userName: true } },
+            user: {
+              select: {
+                id: true, nickname: true, userName: true,
+                licenses: { where: { status: 'IN_PROGRESS' }, select: { id: true }, take: 1 },
+              },
+            },
             guest: { select: { id: true, nickname: true } },
           },
         },
@@ -885,6 +890,7 @@ export class AllblueService {
             medicalUrl: medical?.status === 'submitted' ? `${baseUrl}/${medical.uuid}` : null,
             waiverUuid: waiver?.uuid ?? null,
             medicalUuid: medical?.uuid ?? null,
+            hasInProgressLicense: isGuest ? false : (p.user!.licenses?.length > 0),
           };
         }),
       },
