@@ -1165,10 +1165,12 @@ export class AllblueService {
 
     if (completed) {
       // 통과처리 - 강사 여부 확인
+      console.log('[toggleAchievement] currentUserId:', currentUserId, 'type:', typeof currentUserId);
       const currentUser = await this.prisma.user.findUnique({
         where: { id: currentUserId },
-        select: { userType: true },
+        select: { id: true, userType: true },
       });
+      console.log('[toggleAchievement] currentUser:', JSON.stringify(currentUser));
       if (!currentUser || !['instructor', 'admin'].includes(currentUser.userType.toLowerCase())) {
         return { success: false, message: '강사만 통과처리할 수 있습니다.' };
       }
