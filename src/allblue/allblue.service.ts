@@ -1104,7 +1104,7 @@ export class AllblueService {
     // user_license_achievement (userId: INT)로 완료된 항목 조회
     const achievements = await this.prisma.user_license_achievement.findMany({
       where: { userId: userIntId },
-      select: { requirementId: true, isCompleted: true, completedAt: true },
+      select: { requirementId: true, isCompleted: true, completedAt: true, completedBy: true },
     });
     const achievementMap = new Map(achievements.map(a => [a.requirementId, a]));
 
@@ -1141,6 +1141,7 @@ export class AllblueService {
             note: r.note,
             isCompleted: achievement?.isCompleted === 1,
             completedAt: achievement?.completedAt?.toISOString() ?? null,
+            completedBy: achievement?.completedBy ?? null,
           };
         }),
         completedCount: achievements.filter(a =>
@@ -1149,6 +1150,46 @@ export class AllblueService {
         totalCount: ul.license.requirements.length,
       })),
     };
+  }
+
+  async toggleAchievement(body: { requirementId: number; userId: number; completed: boolean; completedBy: number }) {
+    const { requirementId, userId, completed, completedBy } = body;
+
+    if (!requirementId || !userId) {
+      return { success: false, message: 'requirementId와 userId는 필수입니다.' };
+    }
+
+    const existing = await this.prisma.user_license_achievement.findUnique({
+      where: { userId_requirementId: { userId, requirementId } },
+    });
+
+    if (completed) {
+      // 통과처리
+      if (existing) {
+        await this.prisma.user_license_achievement.update({
+          where: { id: existing.id },
+          data: { isCompleted: 1, completedAt: new Date(), completedBy },
+        });
+      } else {
+        await this.prisma.user_license_achievement.create({
+          data: { userId, requirementId, isCompleted: 1, completedAt: new Date(), completedBy },
+        });
+      }
+    } else {
+      // 통과취소
+      if (!existing) {
+        return { success: false, message: '해당 성취 기록이 없습니다.' };
+      }
+      if (existing.completedBy !== completedBy) {
+        return { success: false, statusCode: 403, message: '통과처리 한 강사만 취소할 수 있습니다.' };
+      }
+      await this.prisma.user_license_achievement.update({
+        where: { id: existing.id },
+        data: { isCompleted: 0, completedAt: null, completedBy: null },
+      });
+    }
+
+    return { success: true };
   }
 
   async getCodes(group: string) {

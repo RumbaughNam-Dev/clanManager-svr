@@ -153,6 +153,12 @@ export class AllblueController {
     return this.allblueService.getUserAchievements(Number(id));
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('achievement/toggle')
+  toggleAchievement(@Body() body: { requirementId: number; userId: number; completed: boolean; completedBy: number }) {
+    return this.allblueService.toggleAchievement(body);
+  }
+
   @Get('associations')
   getAssociations() {
     return this.allblueService.getAssociations();
