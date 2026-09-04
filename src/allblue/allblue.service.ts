@@ -1169,7 +1169,7 @@ export class AllblueService {
         where: { id: currentUserId },
         select: { userType: true },
       });
-      if (!currentUser || currentUser.userType !== 'instructor') {
+      if (!currentUser || !['instructor', 'admin'].includes(currentUser.userType)) {
         return { success: false, message: '강사만 통과처리할 수 있습니다.' };
       }
 
