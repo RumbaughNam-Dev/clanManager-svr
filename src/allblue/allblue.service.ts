@@ -1152,8 +1152,8 @@ export class AllblueService {
     };
   }
 
-  async toggleAchievement(body: { requirementId: number; userId: number; completed: boolean; completedBy: number; scheduleId?: number }) {
-    const { requirementId, userId, completed, completedBy, scheduleId } = body;
+  async toggleAchievement(body: { requirementId: number; userId: number; completed: boolean; completedBy: number }) {
+    const { requirementId, userId, completed, completedBy } = body;
 
     if (!requirementId || !userId) {
       return { success: false, message: 'requirementId와 userId는 필수입니다.' };
@@ -1164,20 +1164,13 @@ export class AllblueService {
     });
 
     if (completed) {
-      // 통과처리 - 일정 등록 강사 권한 체크
-      if (!scheduleId) {
-        return { success: false, message: 'scheduleId는 필수입니다.' };
-      }
-      const schedule = await this.prisma.schedule.findUnique({ where: { id: scheduleId } });
-      if (!schedule) {
-        return { success: false, message: '존재하지 않는 일정입니다.' };
-      }
-      const instructor = await this.prisma.user.findUnique({
+      // 통과처리 - 강사 여부 확인
+      const user = await this.prisma.user.findUnique({
         where: { id: completedBy },
-        select: { userId: true },
+        select: { userType: true },
       });
-      if (!instructor || schedule.instructorId !== instructor.userId) {
-        return { success: false, statusCode: 403, message: '일정을 등록한 강사만 통과처리할 수 있습니다.' };
+      if (!user || user.userType !== 'instructor') {
+        return { success: false, statusCode: 403, message: '강사만 통과처리할 수 있습니다.' };
       }
 
       if (existing) {
