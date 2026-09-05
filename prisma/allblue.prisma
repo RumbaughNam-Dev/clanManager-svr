@@ -333,3 +333,16 @@ model instructor_register_request {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+model debriefing {
+  id            Int      @id @default(autoincrement()) @db.UnsignedInt
+  scheduleId    Int      @map("schedule_id")
+  participantId Int      @map("participant_id")
+  content       String   @db.Text
+  createdBy     Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([scheduleId, participantId])
+  @@index([createdBy])
+}

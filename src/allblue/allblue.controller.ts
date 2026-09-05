@@ -159,6 +159,12 @@ export class AllblueController {
     return this.allblueService.toggleAchievement(body, Number(req.user.sub));
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('debriefing')
+  createDebriefing(@Body() body: { scheduleId: number; participantId: number; content: string }, @Req() req: any) {
+    return this.allblueService.createDebriefing(body, Number(req.user.sub));
+  }
+
   @Get('associations')
   getAssociations() {
     return this.allblueService.getAssociations();

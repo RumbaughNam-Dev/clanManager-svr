@@ -1201,6 +1201,25 @@ export class AllblueService {
     return { success: true };
   }
 
+  async createDebriefing(body: { scheduleId: number; participantId: number; content: string }, createdBy: number) {
+    const { scheduleId, participantId, content } = body;
+
+    if (!scheduleId || !participantId || !content?.trim()) {
+      return { success: false, message: '필수 항목을 입력해주세요.' };
+    }
+
+    await this.prisma.debriefing.create({
+      data: {
+        scheduleId,
+        participantId,
+        content: content.trim(),
+        createdBy,
+      },
+    });
+
+    return { success: true };
+  }
+
   async getCodes(group: string) {
     if (!group?.trim()) {
       return { success: false, message: 'group 파라미터는 필수입니다.' };
