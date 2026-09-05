@@ -1199,6 +1199,7 @@ export class AllblueService {
       if (!existing) {
         return { success: false, message: '해당 성취 기록이 없습니다.' };
       }
+      console.log('[toggleAchievement:cancel] existing.completedBy:', existing.completedBy, typeof existing.completedBy, '/ currentUserId:', currentUserId, typeof currentUserId);
       if (existing.completedBy !== currentUserId) {
         return { success: false, message: '과제를 통과시킨 강사 본인만 취소 처리 할 수 있어요.' };
       }
