@@ -721,7 +721,7 @@ export class AllblueService {
       include: {
         pool: { select: { name: true } },
         instructor: { select: { nickname: true, userName: true } },
-        participants: { include: { user: { select: { nickname: true, userName: true } }, guest: { select: { nickname: true } } } },
+        participants: { include: { user: { select: { nickname: true, userName: true, profile: { select: { level: true } } } }, guest: { select: { nickname: true } } } },
       },
     });
 
@@ -747,6 +747,11 @@ export class AllblueService {
         instructorName: s.instructor.nickname,
         participantCount: s.participants.length,
         participantNames: s.participants.map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
+        participants: s.participants.map(p => ({
+          nickname: p.user?.nickname ?? p.guest?.nickname ?? '',
+          name: p.user?.userName ?? null,
+          level: p.user?.profile?.level ?? null,
+        })),
       })),
     };
   }
