@@ -155,8 +155,8 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Get('user/:id/achievements')
-  getUserAchievements(@Param('id') id: string) {
-    return this.allblueService.getUserAchievements(Number(id));
+  getUserAchievements(@Param('id') id: string, @Req() req: any) {
+    return this.allblueService.getUserAchievements(Number(id), Number(req.user.sub));
   }
 
   @UseGuards(AllblueJwtAuthGuard)

@@ -1079,7 +1079,7 @@ export class AllblueService {
     });
   }
 
-  async getUserAchievements(userIntId: number) {
+  async getUserAchievements(userIntId: number, currentUserId: number) {
     // user.id(INT) → user.userId(VARCHAR) 조회
     const user = await this.prisma.user.findUnique({
       where: { id: userIntId },
@@ -1151,6 +1151,7 @@ export class AllblueService {
             isCompleted: achievement?.isCompleted === 1,
             completedAt: achievement?.completedAt?.toISOString() ?? null,
             completedBy: achievement?.completedBy ?? null,
+            completedByMe: achievement?.isCompleted === 1 && achievement?.completedBy === currentUserId,
           };
         }),
         completedCount: achievements.filter(a =>
