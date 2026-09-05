@@ -1200,7 +1200,7 @@ export class AllblueService {
         return { success: false, message: '해당 성취 기록이 없습니다.' };
       }
       if (existing.completedBy !== currentUserId) {
-        return { success: false, message: '통과처리한 강사만 취소할 수 있습니다.' };
+        return { success: false, message: '과제를 통과시킨 강사 본인만 취소 처리 할 수 있어요.' };
       }
       await this.prisma.user_license_achievement.update({
         where: { id: existing.id },
