@@ -851,6 +851,14 @@ export class AllblueService {
       where: { codeGroup_code: { codeGroup: 'SCHEDULE_TYPE', code: schedule.categoryCode } },
     });
 
+    // debriefing 존재 여부 조회
+    const debriefings = await this.prisma.debriefing.findMany({
+      where: { scheduleId: id },
+      select: { participantId: true },
+      distinct: ['participantId'],
+    });
+    const debriefedIds = new Set(debriefings.map(d => d.participantId));
+
     const d = schedule.scheduleDate;
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -891,6 +899,7 @@ export class AllblueService {
             waiverUuid: waiver?.uuid ?? null,
             medicalUuid: medical?.uuid ?? null,
             hasInProgressLicense: isGuest ? false : (p.user!.licenses?.length > 0),
+            debriefingDone: debriefedIds.has(isGuest ? p.guest!.id : p.user!.id),
           };
         }),
       },
