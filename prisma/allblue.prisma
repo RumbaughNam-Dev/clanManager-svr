@@ -44,6 +44,7 @@ model user {
   formParticipations      form_submission[]          @relation("form_participant_user")
   licenses                user_license[]             @relation("ul_user")
   instructedLicenses      user_license[]             @relation("ul_instructor")
+  debriefings             debriefing[]               @relation("debriefing_creator")
 }
 
 model user_license {
@@ -199,6 +200,7 @@ model schedule {
   instructor      user                   @relation("schedule_instructor", fields: [instructorId], references: [userId])
   participants    schedule_participant[]
   formSubmissions form_submission[]
+  debriefings     debriefing[]
 }
 
 model schedule_participant {
@@ -336,12 +338,14 @@ model instructor_register_request {
 
 model debriefing {
   id            Int      @id @default(autoincrement()) @db.UnsignedInt
-  scheduleId    Int      @map("schedule_id")
+  scheduleId    Int      @map("schedule_id") @db.UnsignedInt
   participantId Int      @map("participant_id")
   content       String   @db.Text
   createdBy     Int      @map("created_by")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
+  schedule      schedule @relation(fields: [scheduleId], references: [id])
+  creator       user     @relation("debriefing_creator", fields: [createdBy], references: [id])
 
   @@index([scheduleId, participantId])
   @@index([createdBy])

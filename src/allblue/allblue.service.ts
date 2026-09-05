@@ -1210,6 +1210,40 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getUserDebriefings(userIntId: number, page: number, limit: number) {
+    const offset = (page - 1) * limit;
+
+    const debriefings = await this.prisma.debriefing.findMany({
+      where: { participantId: userIntId },
+      orderBy: { createdAt: 'desc' },
+      skip: offset,
+      take: limit + 1,
+      include: {
+        schedule: { select: { title: true, scheduleDate: true } },
+        creator: { select: { nickname: true } },
+      },
+    });
+
+    const hasMore = debriefings.length > limit;
+    const items = debriefings.slice(0, limit);
+
+    return {
+      debriefings: items.map(d => {
+        const sd = d.schedule.scheduleDate;
+        const dateStr = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, '0')}-${String(sd.getDate()).padStart(2, '0')}`;
+        return {
+          id: d.id,
+          scheduleTitle: d.schedule.title,
+          scheduleDate: dateStr,
+          content: d.content,
+          createdByName: d.creator.nickname,
+          createdAt: d.createdAt.toISOString(),
+        };
+      }),
+      hasMore,
+    };
+  }
+
   async createDebriefing(body: { scheduleId: number; participantId: number; content: string }, createdBy: number) {
     const { scheduleId, participantId, content } = body;
 

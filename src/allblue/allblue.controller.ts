@@ -148,6 +148,12 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('user/:id/debriefings')
+  getUserDebriefings(@Param('id') id: string, @Query('page') page: string, @Query('limit') limit: string) {
+    return this.allblueService.getUserDebriefings(Number(id), Number(page) || 1, Number(limit) || 10);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Get('user/:id/achievements')
   getUserAchievements(@Param('id') id: string) {
     return this.allblueService.getUserAchievements(Number(id));
