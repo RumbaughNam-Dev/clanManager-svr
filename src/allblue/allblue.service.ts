@@ -827,6 +827,7 @@ export class AllblueService {
             user: {
               select: {
                 id: true, nickname: true, userName: true,
+                profile: { select: { level: true } },
                 licenses: { where: { status: 'IN_PROGRESS' }, select: { id: true }, take: 1 },
               },
             },
@@ -903,6 +904,7 @@ export class AllblueService {
             medicalUrl: medical?.status === 'submitted' ? `${baseUrl}/${medical.uuid}` : null,
             waiverUuid: waiver?.uuid ?? null,
             medicalUuid: medical?.uuid ?? null,
+            level: isGuest ? null : (p.user!.profile?.level ?? null),
             hasInProgressLicense: isGuest ? false : (p.user!.licenses?.length > 0),
             debriefingDone: debriefedIds.has(isGuest ? p.guest!.id : p.user!.id),
           };
