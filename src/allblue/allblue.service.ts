@@ -1204,7 +1204,7 @@ export class AllblueService {
   async createDebriefing(body: { scheduleId: number; participantId: number; content: string }, createdBy: number) {
     const { scheduleId, participantId, content } = body;
 
-    if (!scheduleId || !participantId || !content?.trim()) {
+    if (!scheduleId || !participantId) {
       return { success: false, message: '필수 항목을 입력해주세요.' };
     }
 
@@ -1212,7 +1212,7 @@ export class AllblueService {
       data: {
         scheduleId,
         participantId,
-        content: content.trim(),
+        content: content?.trim() ?? '',
         createdBy,
       },
     });
