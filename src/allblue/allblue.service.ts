@@ -778,8 +778,8 @@ export class AllblueService {
       orderBy: [{ scheduleDate: 'asc' }, { startHour: 'asc' }, { startMinute: 'asc' }],
       include: {
         pool: { select: { name: true } },
-        instructor: { select: { nickname: true, userName: true } },
-        participants: { include: { user: { select: { nickname: true, userName: true } }, guest: { select: { nickname: true } } } },
+        instructor: { select: { nickname: true, userName: true, profile: { select: { level: true } } } },
+        participants: { include: { user: { select: { nickname: true, userName: true, profile: { select: { level: true } } } }, guest: { select: { nickname: true } } } },
       },
     });
 
@@ -791,10 +791,26 @@ export class AllblueService {
       : [];
     const codeMap = new Map(codes.map(c => [c.code, c.nameKo ?? c.name]));
 
+    const levelOrder = ['1', '2', '3', '4', '5', 'A'];
+
     return {
       schedules: schedules.map(s => {
         const d = s.scheduleDate;
         const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+        // 강사 + 참석자 레벨 수집
+        const levels: string[] = [];
+        const instrLevel = s.instructor.profile?.level;
+        if (instrLevel) levels.push(instrLevel);
+        for (const p of s.participants) {
+          const l = p.user?.profile?.level;
+          if (l) levels.push(l);
+        }
+
+        const minLevel = levels.length > 0
+          ? levels.reduce((min, l) => levelOrder.indexOf(l) < levelOrder.indexOf(min) ? l : min)
+          : null;
+
         return {
           id: s.id,
           title: s.title,
@@ -807,6 +823,7 @@ export class AllblueService {
           instructorName: s.instructor.nickname,
           participantCount: s.participants.length,
           participantNames: s.participants.map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
+          minLevel,
         };
       }),
     };
