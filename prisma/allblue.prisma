@@ -45,6 +45,7 @@ model user {
   licenses                user_license[]             @relation("ul_user")
   instructedLicenses      user_license[]             @relation("ul_instructor")
   debriefings             debriefing[]               @relation("debriefing_creator")
+  closeFriendOf           close_friend[]             @relation("cf_friend")
 }
 
 model user_license {
@@ -362,4 +363,28 @@ model dive_buddy {
 
   @@unique([userId, buddyId])
   @@index([userId, lastDiveDate(sort: Desc)])
+}
+
+model close_friend {
+  id        Int      @id @default(autoincrement()) @db.UnsignedInt
+  userId    String   @map("user_id") @db.VarChar(50)
+  friendId  String   @map("friend_id") @db.VarChar(50)
+  memo      String   @default("") @db.VarChar(200)
+  pinned    Int      @default(0) @db.TinyInt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  friend    user     @relation("cf_friend", fields: [friendId], references: [userId])
+
+  @@unique([userId, friendId])
+  @@index([userId, pinned(sort: Desc), createdAt(sort: Desc)])
+}
+
+model blocked_user {
+  id        Int      @id @default(autoincrement()) @db.UnsignedInt
+  userId    String   @map("user_id") @db.VarChar(50)
+  blockedId String   @map("blocked_id") @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, blockedId])
+  @@index([userId])
 }

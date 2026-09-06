@@ -1308,6 +1308,106 @@ export class AllblueService {
     }
   }
 
+  async getCloseFriends(userId: string) {
+    const friends = await this.prisma.close_friend.findMany({
+      where: { userId },
+      orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        friend: {
+          select: {
+            userId: true, nickname: true, userName: true,
+            profile: { select: { level: true } },
+            licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
+          },
+        },
+      },
+    });
+
+    return {
+      friends: friends.map(f => ({
+        userId: f.friend.userId,
+        nickname: f.friend.nickname,
+        name: f.friend.userName ?? null,
+        level: f.friend.profile?.level ?? '0',
+        memo: f.memo,
+        pinned: f.pinned === 1,
+        licenseName: f.friend.licenses[0]?.license?.nameKo ?? f.friend.licenses[0]?.license?.name ?? null,
+      })),
+    };
+  }
+
+  async addCloseFriend(userId: string, friendId: string) {
+    if (!friendId?.trim()) {
+      return { success: false, message: 'friendId는 필수입니다.' };
+    }
+    if (userId === friendId) {
+      return { success: false, message: '자기 자신을 추가할 수 없습니다.' };
+    }
+
+    const existing = await this.prisma.close_friend.findUnique({
+      where: { userId_friendId: { userId, friendId } },
+    });
+    if (existing) {
+      return { success: false, message: '이미 친한친구입니다.' };
+    }
+
+    await this.prisma.close_friend.create({
+      data: { userId, friendId },
+    });
+    return { success: true };
+  }
+
+  async removeCloseFriend(userId: string, friendId: string) {
+    await this.prisma.close_friend.deleteMany({
+      where: { userId, friendId },
+    });
+    return { success: true };
+  }
+
+  async toggleCloseFriendPin(userId: string, friendId: string, pinned: boolean) {
+    await this.prisma.close_friend.update({
+      where: { userId_friendId: { userId, friendId } },
+      data: { pinned: pinned ? 1 : 0 },
+    });
+    return { success: true };
+  }
+
+  async updateCloseFriendMemo(userId: string, friendId: string, memo: string) {
+    await this.prisma.close_friend.update({
+      where: { userId_friendId: { userId, friendId } },
+      data: { memo: memo?.trim() ?? '' },
+    });
+    return { success: true };
+  }
+
+  async blockUser(userId: string, blockedId: string) {
+    if (!blockedId?.trim()) {
+      return { success: false, message: 'blockedId는 필수입니다.' };
+    }
+    if (userId === blockedId) {
+      return { success: false, message: '자기 자신을 차단할 수 없습니다.' };
+    }
+
+    const existing = await this.prisma.blocked_user.findUnique({
+      where: { userId_blockedId: { userId, blockedId } },
+    });
+    if (existing) {
+      return { success: false, message: '이미 차단된 유저입니다.' };
+    }
+
+    await this.prisma.blocked_user.create({
+      data: { userId, blockedId },
+    });
+    return { success: true };
+  }
+
+  async unblockUser(userId: string, blockedId: string) {
+    await this.prisma.blocked_user.deleteMany({
+      where: { userId, blockedId },
+    });
+    return { success: true };
+  }
+
   async createDebriefing(body: { scheduleId: number; participantId: number; content: string }, createdBy: number) {
     const { scheduleId, participantId, content } = body;
 

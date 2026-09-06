@@ -171,6 +171,48 @@ export class AllblueController {
     return this.allblueService.createDebriefing(body, Number(req.user.sub));
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('friends/close')
+  getCloseFriends(@Req() req: any) {
+    return this.allblueService.getCloseFriends(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('friends/close')
+  addCloseFriend(@Body() body: { friendId: string }, @Req() req: any) {
+    return this.allblueService.addCloseFriend(req.user.userId, body.friendId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Delete('friends/close/:friendId')
+  removeCloseFriend(@Param('friendId') friendId: string, @Req() req: any) {
+    return this.allblueService.removeCloseFriend(req.user.userId, friendId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('friends/close/:friendId/pin')
+  toggleCloseFriendPin(@Param('friendId') friendId: string, @Body() body: { pinned: boolean }, @Req() req: any) {
+    return this.allblueService.toggleCloseFriendPin(req.user.userId, friendId, body.pinned);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('friends/close/:friendId/memo')
+  updateCloseFriendMemo(@Param('friendId') friendId: string, @Body() body: { memo: string }, @Req() req: any) {
+    return this.allblueService.updateCloseFriendMemo(req.user.userId, friendId, body.memo);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('friends/block')
+  blockUser(@Body() body: { blockedId: string }, @Req() req: any) {
+    return this.allblueService.blockUser(req.user.userId, body.blockedId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Delete('friends/block/:blockedId')
+  unblockUser(@Param('blockedId') blockedId: string, @Req() req: any) {
+    return this.allblueService.unblockUser(req.user.userId, blockedId);
+  }
+
   @Get('associations')
   getAssociations() {
     return this.allblueService.getAssociations();
