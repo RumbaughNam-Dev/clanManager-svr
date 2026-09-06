@@ -598,7 +598,7 @@ export class AllblueService {
     });
 
     return {
-      users: sorted.map(u => ({ id: u.id, nickname: u.nickname, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? null })),
+      users: sorted.map(u => ({ id: u.id, nickname: u.nickname, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? '0' })),
     };
   }
 
@@ -917,7 +917,7 @@ export class AllblueService {
             medicalUrl: medical?.status === 'submitted' ? `${baseUrl}/${medical.uuid}` : null,
             waiverUuid: waiver?.uuid ?? null,
             medicalUuid: medical?.uuid ?? null,
-            level: isGuest ? null : (p.user!.profile?.level ?? null),
+            level: isGuest ? '0' : (p.user!.profile?.level ?? '0'),
             hasInProgressLicense: isGuest ? false : (p.user!.licenses?.length > 0),
             debriefingDone: debriefedIds.has(isGuest ? p.guest!.id : p.user!.id),
           };
