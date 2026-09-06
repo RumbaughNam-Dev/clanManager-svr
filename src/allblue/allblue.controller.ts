@@ -172,6 +172,24 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('friends/buddies')
+  getBuddies(@Query('page') page: string, @Query('limit') limit: string, @Req() req: any) {
+    return this.allblueService.getBuddies(req.user.userId, Number(page) || 1, Number(limit) || 20);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('friends/students')
+  getStudents(@Req() req: any) {
+    return this.allblueService.getStudents(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('friends/instructors')
+  getInstructors(@Req() req: any) {
+    return this.allblueService.getInstructors(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Get('friends/close')
   getCloseFriends(@Req() req: any) {
     return this.allblueService.getCloseFriends(req.user.userId);

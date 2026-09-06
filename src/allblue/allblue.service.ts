@@ -1308,6 +1308,148 @@ export class AllblueService {
     }
   }
 
+  private async getUserFriendInfo(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { userId },
+      select: {
+        userId: true, nickname: true, userName: true,
+        profile: { select: { level: true } },
+        licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
+      },
+    });
+    if (!user) return null;
+    return {
+      userId: user.userId,
+      nickname: user.nickname,
+      name: user.userName ?? null,
+      level: user.profile?.level ?? '0',
+      licenseName: user.licenses[0]?.license?.nameKo ?? user.licenses[0]?.license?.name ?? null,
+    };
+  }
+
+  async getBuddies(userId: string, page: number, limit: number) {
+    const offset = (page - 1) * limit;
+    const buddies = await this.prisma.dive_buddy.findMany({
+      where: { userId },
+      orderBy: { lastDiveDate: 'desc' },
+      skip: offset,
+      take: limit + 1,
+    });
+
+    const hasMore = buddies.length > limit;
+    const items = buddies.slice(0, limit);
+
+    const buddyUsers = await this.prisma.user.findMany({
+      where: { userId: { in: items.map(b => b.buddyId) } },
+      select: {
+        userId: true, nickname: true, userName: true,
+        profile: { select: { level: true } },
+      },
+    });
+    const userMap = new Map(buddyUsers.map(u => [u.userId, u]));
+
+    return {
+      buddies: items.map(b => {
+        const u = userMap.get(b.buddyId);
+        const d = b.lastDiveDate;
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return {
+          userId: b.buddyId,
+          nickname: u?.nickname ?? '',
+          name: u?.userName ?? null,
+          level: u?.profile?.level ?? '0',
+          lastDiveDate: dateStr,
+        };
+      }),
+      hasMore,
+    };
+  }
+
+  async getStudents(instructorUserId: string) {
+    // 내가 강사인 일정의 참석자 중 교육 카테고리인 것
+    const participants = await this.prisma.schedule_participant.findMany({
+      where: {
+        userId: { not: null },
+        schedule: {
+          instructorId: instructorUserId,
+          categoryCode: { in: ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'] },
+        },
+      },
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+
+    const studentUserIds = participants.map(p => p.userId!).filter(id => id !== instructorUserId);
+    if (studentUserIds.length === 0) return { students: [] };
+
+    // 친한친구 메모 조회
+    const closeFriends = await this.prisma.close_friend.findMany({
+      where: { userId: instructorUserId, friendId: { in: studentUserIds } },
+    });
+    const memoMap = new Map(closeFriends.map(f => [f.friendId, f.memo]));
+
+    const users = await this.prisma.user.findMany({
+      where: { userId: { in: studentUserIds } },
+      select: {
+        userId: true, nickname: true, userName: true,
+        profile: { select: { level: true } },
+        licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
+      },
+    });
+
+    return {
+      students: users.map(u => ({
+        userId: u.userId,
+        nickname: u.nickname,
+        name: u.userName ?? null,
+        level: u.profile?.level ?? '0',
+        memo: memoMap.get(u.userId) ?? '',
+        licenseName: u.licenses[0]?.license?.nameKo ?? u.licenses[0]?.license?.name ?? null,
+      })),
+    };
+  }
+
+  async getInstructors(userUserId: string) {
+    // 내가 참석자인 일정의 강사 중 교육 카테고리인 것
+    const schedules = await this.prisma.schedule_participant.findMany({
+      where: {
+        userId: userUserId,
+        schedule: {
+          categoryCode: { in: ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'] },
+        },
+      },
+      select: { schedule: { select: { instructorId: true } } },
+    });
+
+    const instructorIds = [...new Set(schedules.map(s => s.schedule.instructorId))].filter(id => id !== userUserId);
+    if (instructorIds.length === 0) return { instructors: [] };
+
+    const closeFriends = await this.prisma.close_friend.findMany({
+      where: { userId: userUserId, friendId: { in: instructorIds } },
+    });
+    const memoMap = new Map(closeFriends.map(f => [f.friendId, f.memo]));
+
+    const users = await this.prisma.user.findMany({
+      where: { userId: { in: instructorIds } },
+      select: {
+        userId: true, nickname: true, userName: true,
+        profile: { select: { level: true } },
+        licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
+      },
+    });
+
+    return {
+      instructors: users.map(u => ({
+        userId: u.userId,
+        nickname: u.nickname,
+        name: u.userName ?? null,
+        level: u.profile?.level ?? '0',
+        memo: memoMap.get(u.userId) ?? '',
+        licenseName: u.licenses[0]?.license?.nameKo ?? u.licenses[0]?.license?.name ?? null,
+      })),
+    };
+  }
+
   async getCloseFriends(userId: string) {
     const friends = await this.prisma.close_friend.findMany({
       where: { userId },
