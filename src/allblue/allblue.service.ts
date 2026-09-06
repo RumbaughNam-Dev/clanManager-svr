@@ -698,6 +698,13 @@ export class AllblueService {
         }
       }
 
+      // dive_buddy 갱신
+      const allParticipants = await tx.schedule_participant.findMany({
+        where: { scheduleId: schedule.id, userId: { not: null } },
+        select: { userId: true },
+      });
+      await this.updateDiveBuddies(tx, schedule.id, new Date(scheduleDate), instructorUserId, allParticipants.map(p => p.userId!));
+
       return { success: true, scheduleId: schedule.id };
     });
   }
@@ -1095,6 +1102,13 @@ export class AllblueService {
         }
       }
 
+      // dive_buddy 갱신 - 현재 참석자 전체 기준
+      const finalParticipants = await tx.schedule_participant.findMany({
+        where: { scheduleId: id, userId: { not: null } },
+        select: { userId: true },
+      });
+      await this.updateDiveBuddies(tx, id, new Date(scheduleDate), instructorUserId, finalParticipants.map(p => p.userId!));
+
       return { success: true };
     });
   }
@@ -1264,6 +1278,34 @@ export class AllblueService {
       }),
       hasMore,
     };
+  }
+
+  private async updateDiveBuddies(tx: any, scheduleId: number, scheduleDate: Date, instructorUserId: string, participantUserIds: string[]) {
+    // 강사 포함 전체 userId 목록 (게스트 제외)
+    const allUserIds = [instructorUserId, ...participantUserIds.filter(id => id !== instructorUserId)];
+    if (allUserIds.length < 2) return;
+
+    const diveDate = scheduleDate;
+
+    for (let i = 0; i < allUserIds.length; i++) {
+      for (let j = 0; j < allUserIds.length; j++) {
+        if (i === j) continue;
+        const userId = allUserIds[i];
+        const buddyId = allUserIds[j];
+
+        const existing = await tx.dive_buddy.findUnique({
+          where: { userId_buddyId: { userId, buddyId } },
+        });
+
+        if (!existing || existing.lastDiveDate <= diveDate) {
+          await tx.dive_buddy.upsert({
+            where: { userId_buddyId: { userId, buddyId } },
+            create: { userId, buddyId, lastDiveDate: diveDate, scheduleId },
+            update: { lastDiveDate: diveDate, scheduleId },
+          });
+        }
+      }
+    }
   }
 
   async createDebriefing(body: { scheduleId: number; participantId: number; content: string }, createdBy: number) {

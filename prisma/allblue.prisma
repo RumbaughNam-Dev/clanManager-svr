@@ -350,3 +350,16 @@ model debriefing {
   @@index([scheduleId, participantId])
   @@index([createdBy])
 }
+
+model dive_buddy {
+  id           Int      @id @default(autoincrement()) @db.UnsignedInt
+  userId       String   @map("user_id") @db.VarChar(50)
+  buddyId      String   @map("buddy_id") @db.VarChar(50)
+  lastDiveDate DateTime @map("last_dive_date") @db.Date
+  scheduleId   Int      @map("schedule_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, buddyId])
+  @@index([userId, lastDiveDate(sort: Desc)])
+}
