@@ -791,25 +791,21 @@ export class AllblueService {
       : [];
     const codeMap = new Map(codes.map(c => [c.code, c.nameKo ?? c.name]));
 
-    const levelOrder = ['1', '2', '3', '4', '5', 'A'];
+    const levelOrder = ['0', '1', '2', '3', '4', '5', 'A'];
 
     return {
       schedules: schedules.map(s => {
         const d = s.scheduleDate;
         const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-        // 강사 + 참석자 레벨 수집
+        // 강사 + 참석자 레벨 수집 (null/미설정은 '0'으로 취급)
         const levels: string[] = [];
-        const instrLevel = s.instructor.profile?.level;
-        if (instrLevel) levels.push(instrLevel);
+        levels.push(s.instructor.profile?.level || '0');
         for (const p of s.participants) {
-          const l = p.user?.profile?.level;
-          if (l) levels.push(l);
+          levels.push(p.user?.profile?.level || '0');
         }
 
-        const minLevel = levels.length > 0
-          ? levels.reduce((min, l) => levelOrder.indexOf(l) < levelOrder.indexOf(min) ? l : min)
-          : null;
+        const minLevel = levels.reduce((min, l) => levelOrder.indexOf(l) < levelOrder.indexOf(min) ? l : min);
 
         return {
           id: s.id,
