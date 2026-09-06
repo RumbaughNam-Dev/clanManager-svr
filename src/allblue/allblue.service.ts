@@ -455,6 +455,17 @@ export class AllblueService {
     };
   }
 
+  async getProfileByUserId(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!user) {
+      return { success: false, message: '사용자를 찾을 수 없습니다.' };
+    }
+    return this.getProfile(user.id);
+  }
+
   async updateProfile(userId: number, body: any) {
     const { diverLevel, description, shoesSize, finSize, sta, dynb, dyn, dnf, fim, cwtb, cwt, cnf } = body;
 

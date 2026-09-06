@@ -75,6 +75,12 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('profile/:userId')
+  getProfileByUserId(@Param('userId') userId: string) {
+    return this.allblueService.getProfileByUserId(userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Put('profile')
   updateProfile(@Req() req: any, @Body() body: any) {
     return this.allblueService.updateProfile(Number(req.user.sub), body);
