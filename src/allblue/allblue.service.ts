@@ -1477,14 +1477,14 @@ export class AllblueService {
     });
 
     return {
-      friends: friends.map(f => ({
-        userId: f.friend.userId,
-        nickname: f.friend.nickname,
-        name: f.friend.userName ?? null,
-        level: f.friend.profile?.level ?? '0',
+      friends: friends.filter(f => f.friend).map(f => ({
+        userId: f.friend!.userId,
+        nickname: f.friend!.nickname,
+        name: f.friend!.userName ?? null,
+        level: f.friend!.profile?.level ?? '0',
         memo: f.memo,
         pinned: f.pinned === 1,
-        licenseName: f.friend.licenses[0]?.license?.nameKo ?? f.friend.licenses[0]?.license?.name ?? null,
+        licenseName: f.friend!.licenses[0]?.license?.nameKo ?? f.friend!.licenses[0]?.license?.name ?? null,
       })),
     };
   }

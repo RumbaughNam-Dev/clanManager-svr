@@ -373,7 +373,7 @@ model close_friend {
   pinned    Int      @default(0) @db.TinyInt
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-  friend    user     @relation("cf_friend", fields: [friendId], references: [userId])
+  friend    user?    @relation("cf_friend", fields: [friendId], references: [userId])
 
   @@unique([userId, friendId])
   @@index([userId, pinned(sort: Desc), createdAt(sort: Desc)])
