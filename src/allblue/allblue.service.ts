@@ -1462,9 +1462,6 @@ export class AllblueService {
   }
 
   async getCloseFriends(userId: string) {
-    console.log('[getCloseFriends] userId:', JSON.stringify(userId), 'type:', typeof userId);
-    const allRecords = await this.prisma.close_friend.findMany({ take: 5 });
-    console.log('[getCloseFriends] sample records:', JSON.stringify(allRecords.map(r => ({ userId: r.userId, friendId: r.friendId }))));
     const friends = await this.prisma.close_friend.findMany({
       where: { userId },
       orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
@@ -1493,22 +1490,36 @@ export class AllblueService {
   }
 
   async addCloseFriend(userId: string, friendId: string) {
-    if (!friendId?.trim()) {
+    if (!friendId?.toString().trim()) {
       return { success: false, message: 'friendId는 필수입니다.' };
     }
-    if (userId === friendId) {
+
+    // friendId가 숫자(user.id INT)인 경우 user.userId(VARCHAR)로 변환
+    let resolvedFriendId = friendId.toString().trim();
+    if (/^\d+$/.test(resolvedFriendId)) {
+      const friend = await this.prisma.user.findUnique({
+        where: { id: Number(resolvedFriendId) },
+        select: { userId: true },
+      });
+      if (!friend) {
+        return { success: false, message: '존재하지 않는 사용자입니다.' };
+      }
+      resolvedFriendId = friend.userId;
+    }
+
+    if (userId === resolvedFriendId) {
       return { success: false, message: '자기 자신을 추가할 수 없습니다.' };
     }
 
     const existing = await this.prisma.close_friend.findUnique({
-      where: { userId_friendId: { userId, friendId } },
+      where: { userId_friendId: { userId, friendId: resolvedFriendId } },
     });
     if (existing) {
       return { success: false, message: '이미 친한친구입니다.' };
     }
 
     await this.prisma.close_friend.create({
-      data: { userId, friendId },
+      data: { userId, friendId: resolvedFriendId },
     });
     return { success: true };
   }
