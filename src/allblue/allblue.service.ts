@@ -1462,6 +1462,9 @@ export class AllblueService {
   }
 
   async getCloseFriends(userId: string) {
+    console.log('[getCloseFriends] userId:', JSON.stringify(userId), 'type:', typeof userId);
+    const allRecords = await this.prisma.close_friend.findMany({ take: 5 });
+    console.log('[getCloseFriends] sample records:', JSON.stringify(allRecords.map(r => ({ userId: r.userId, friendId: r.friendId }))));
     const friends = await this.prisma.close_friend.findMany({
       where: { userId },
       orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
