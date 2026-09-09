@@ -1361,10 +1361,19 @@ export class AllblueService {
     };
   }
 
+  private async getBlockedIds(userId: string): Promise<Set<string>> {
+    const blocked = await this.prisma.blocked_user.findMany({
+      where: { userId },
+      select: { blockedId: true },
+    });
+    return new Set(blocked.map(b => b.blockedId));
+  }
+
   async getBuddies(userId: string, page: number, limit: number) {
+    const blockedIds = await this.getBlockedIds(userId);
     const offset = (page - 1) * limit;
     const buddies = await this.prisma.dive_buddy.findMany({
-      where: { userId },
+      where: { userId, buddyId: { notIn: [...blockedIds] } },
       orderBy: { lastDiveDate: 'desc' },
       skip: offset,
       take: limit + 1,
@@ -1400,6 +1409,7 @@ export class AllblueService {
   }
 
   async getStudents(instructorUserId: string) {
+    const blockedIds = await this.getBlockedIds(instructorUserId);
     // 내가 강사인 일정의 참석자 중 교육 카테고리인 것
     const participants = await this.prisma.schedule_participant.findMany({
       where: {
@@ -1413,7 +1423,7 @@ export class AllblueService {
       distinct: ['userId'],
     });
 
-    const studentUserIds = participants.map(p => p.userId!).filter(id => id !== instructorUserId);
+    const studentUserIds = participants.map(p => p.userId!).filter(id => id !== instructorUserId && !blockedIds.has(id));
     if (studentUserIds.length === 0) return { students: [] };
 
     // 친한친구 메모 조회
@@ -1444,6 +1454,7 @@ export class AllblueService {
   }
 
   async getInstructors(userUserId: string) {
+    const blockedIds = await this.getBlockedIds(userUserId);
     // 내가 참석자인 일정의 강사 중 교육 카테고리인 것
     const schedules = await this.prisma.schedule_participant.findMany({
       where: {
@@ -1455,7 +1466,7 @@ export class AllblueService {
       select: { schedule: { select: { instructorId: true } } },
     });
 
-    const instructorIds = [...new Set(schedules.map(s => s.schedule.instructorId))].filter(id => id !== userUserId);
+    const instructorIds = [...new Set(schedules.map(s => s.schedule.instructorId))].filter(id => id !== userUserId && !blockedIds.has(id));
     if (instructorIds.length === 0) return { instructors: [] };
 
     const closeFriends = await this.prisma.close_friend.findMany({
