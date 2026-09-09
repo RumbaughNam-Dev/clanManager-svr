@@ -76,8 +76,8 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Get('profile/:userId')
-  getProfileByUserId(@Param('userId') userId: string) {
-    return this.allblueService.getProfileByUserId(userId);
+  getProfileByUserId(@Param('userId') userId: string, @Req() req: any) {
+    return this.allblueService.getProfileByUserId(userId, req.user.userId);
   }
 
   @UseGuards(AllblueJwtAuthGuard)

@@ -455,7 +455,7 @@ export class AllblueService {
     };
   }
 
-  async getProfileByUserId(userId: string) {
+  async getProfileByUserId(userId: string, currentUserId: string) {
     const user = await this.prisma.user.findUnique({
       where: { userId },
       select: { id: true },
@@ -463,7 +463,30 @@ export class AllblueService {
     if (!user) {
       return { success: false, message: '사용자를 찾을 수 없습니다.' };
     }
-    return this.getProfile(user.id);
+
+    const result = await this.getProfile(user.id);
+
+    // isMyStudent 판정
+    let isMyStudent = false;
+    const currentUser = await this.prisma.user.findUnique({
+      where: { userId: currentUserId },
+      select: { profile: { select: { level: true } } },
+    });
+    const level = currentUser?.profile?.level;
+    if (level === '5' || level === 'A') {
+      const count = await this.prisma.schedule_participant.count({
+        where: {
+          userId,
+          schedule: {
+            instructorId: currentUserId,
+            categoryCode: { in: ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'] },
+          },
+        },
+      });
+      isMyStudent = count > 0;
+    }
+
+    return { ...result, isMyStudent };
   }
 
   async updateProfile(userId: number, body: any) {
