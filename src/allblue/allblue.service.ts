@@ -1938,21 +1938,9 @@ export class AllblueService {
       return { error: 'VALIDATION_ERROR', message: '닉네임을 입력해주세요.' };
     }
 
-    // birthDate 검증
-    if (!birthDate?.trim()) {
-      return { error: 'VALIDATION_ERROR', message: '생년월일을 입력해주세요.' };
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate.trim())) {
+    // birthDate 검증 (선택)
+    if (birthDate?.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate.trim())) {
       return { error: 'VALIDATION_ERROR', message: '생년월일 형식이 올바르지 않습니다.' };
-    }
-    const [y, m, d] = birthDate.trim().split('-').map(Number);
-    const birthDateObj = new Date(y, m - 1, d);
-    if (birthDateObj.getFullYear() !== y || birthDateObj.getMonth() !== m - 1 || birthDateObj.getDate() !== d) {
-      return { error: 'VALIDATION_ERROR', message: '존재하지 않는 날짜입니다.' };
-    }
-    const currentYear = new Date().getFullYear();
-    if (y < 1900 || y > currentYear) {
-      return { error: 'VALIDATION_ERROR', message: '생년월일이 올바르지 않습니다.' };
     }
 
     // phone 검증
@@ -1980,7 +1968,7 @@ export class AllblueService {
         naverId: decoded.naverId ?? null,
         appleId: decoded.appleId ?? null,
         profileImage: decoded.profileImage,
-        birthDate: birthDate.trim(),
+        birthDate: birthDate?.trim() || null,
         kakaoTalkId: kakaoTalkId?.trim() || null,
         instagramId: instagramId?.trim() || null,
         userType: 'user',
