@@ -243,6 +243,16 @@ export class AllblueController {
     return this.allblueService.unblockUser(req.user.userId, blockedId);
   }
 
+  @Post('auth/send-code')
+  sendVerificationCode(@Body() body: { phone: string }) {
+    return this.allblueService.sendVerificationCode(body.phone);
+  }
+
+  @Post('auth/verify-code')
+  verifyCode(@Body() body: { phone: string; code: string }) {
+    return this.allblueService.verifyCode(body.phone, body.code);
+  }
+
   @Get('associations')
   getAssociations() {
     return this.allblueService.getAssociations();

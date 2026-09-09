@@ -7,10 +7,12 @@ import { randomUUID } from 'crypto';
 import { AllblueS3Service } from './allblue-s3.service';
 import * as fs from 'fs';
 import * as path from 'path';
+import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 
 @Injectable()
 export class AllblueService {
   private jwtSecret: string;
+  private snsClient: SNSClient;
 
   constructor(
     private prisma: AllbluePrismaService,
@@ -18,6 +20,7 @@ export class AllblueService {
     private s3: AllblueS3Service,
   ) {
     this.jwtSecret = this.config.get<string>('JWT_SECRET', 'dev-allblue-secret');
+    this.snsClient = new SNSClient({ region: 'ap-northeast-2' });
   }
 
   private async logHistory(userId: number, result: string, ip?: string) {
@@ -1659,6 +1662,64 @@ export class AllblueService {
         createdBy,
       },
     });
+
+    return { success: true };
+  }
+
+  async sendVerificationCode(phone: string) {
+    if (!phone?.trim() || !/^\d{10,11}$/.test(phone.trim())) {
+      return { success: false, message: '전화번호를 올바르게 입력해주세요.' };
+    }
+
+    const cleanPhone = phone.trim();
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    // 기존 코드 삭제 후 새로 생성
+    await this.prisma.verification_code.deleteMany({ where: { phone: cleanPhone } });
+    await this.prisma.verification_code.create({
+      data: { phone: cleanPhone, code, expiresAt },
+    });
+
+    // AWS SNS로 SMS 발송
+    try {
+      await this.snsClient.send(new PublishCommand({
+        PhoneNumber: '+82' + cleanPhone.slice(1),
+        Message: `[AllBlue] 인증번호: ${code}`,
+        MessageAttributes: {
+          'AWS.SNS.SMS.SMSType': {
+            DataType: 'String',
+            StringValue: 'Transactional',
+          },
+        },
+      }));
+    } catch (err) {
+      console.error('[SMS] 발송 실패:', err);
+      return { success: false, message: 'SMS 발송에 실패했습니다. 잠시 후 다시 시도해주세요.' };
+    }
+
+    return { success: true };
+  }
+
+  async verifyCode(phone: string, code: string) {
+    if (!phone?.trim() || !code?.trim()) {
+      return { success: false, message: '전화번호와 인증번호를 입력해주세요.' };
+    }
+
+    const record = await this.prisma.verification_code.findFirst({
+      where: { phone: phone.trim(), code: code.trim() },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!record) {
+      return { success: false, message: '인증번호가 일치하지 않습니다.' };
+    }
+
+    if (record.expiresAt < new Date()) {
+      return { success: false, message: '인증번호가 만료되었습니다. 다시 요청해주세요.' };
+    }
+
+    await this.prisma.verification_code.deleteMany({ where: { phone: phone.trim() } });
 
     return { success: true };
   }
