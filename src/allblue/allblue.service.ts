@@ -1570,6 +1570,36 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getBlockedUsers(userId: string) {
+    const blocked = await this.prisma.blocked_user.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (blocked.length === 0) return { users: [] };
+
+    const users = await this.prisma.user.findMany({
+      where: { userId: { in: blocked.map(b => b.blockedId) } },
+      select: {
+        userId: true, nickname: true, userName: true,
+        profile: { select: { level: true } },
+      },
+    });
+    const userMap = new Map(users.map(u => [u.userId, u]));
+
+    return {
+      users: blocked.map(b => {
+        const u = userMap.get(b.blockedId);
+        return {
+          userId: b.blockedId,
+          nickname: u?.nickname ?? '',
+          name: u?.userName ?? null,
+          level: u?.profile?.level ?? '0',
+        };
+      }),
+    };
+  }
+
   async blockUser(userId: string, blockedId: string) {
     if (!blockedId?.trim()) {
       return { success: false, message: 'blockedId는 필수입니다.' };

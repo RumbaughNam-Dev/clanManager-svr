@@ -226,6 +226,12 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('friends/blocked')
+  getBlockedUsers(@Req() req: any) {
+    return this.allblueService.getBlockedUsers(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Post('friends/block')
   blockUser(@Body() body: { blockedId: string }, @Req() req: any) {
     return this.allblueService.blockUser(req.user.userId, body.blockedId);
