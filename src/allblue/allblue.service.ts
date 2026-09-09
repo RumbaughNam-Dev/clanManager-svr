@@ -1663,6 +1663,51 @@ export class AllblueService {
     return { success: true };
   }
 
+  async sendVerificationCode(phone: string) {
+    if (!phone?.trim() || !/^\d{10,11}$/.test(phone.trim())) {
+      return { success: false, message: '전화번호를 올바르게 입력해주세요.' };
+    }
+
+    const cleanPhone = phone.trim();
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    // 기존 코드 삭제 후 새로 생성
+    await this.prisma.verification_code.deleteMany({ where: { phone: cleanPhone } });
+    await this.prisma.verification_code.create({
+      data: { phone: cleanPhone, code, expiresAt },
+    });
+
+    // TODO: SMS 발송 연동
+    console.log(`[SMS] phone: ${cleanPhone}, code: ${code}`);
+
+    return { success: true };
+  }
+
+  async verifyCode(phone: string, code: string) {
+    if (!phone?.trim() || !code?.trim()) {
+      return { success: false, message: '전화번호와 인증번호를 입력해주세요.' };
+    }
+
+    const record = await this.prisma.verification_code.findFirst({
+      where: { phone: phone.trim(), code: code.trim() },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!record) {
+      return { success: false, message: '인증번호가 일치하지 않습니다.' };
+    }
+
+    if (record.expiresAt < new Date()) {
+      return { success: false, message: '인증번호가 만료되었습니다. 다시 요청해주세요.' };
+    }
+
+    // 사용된 코드 삭제
+    await this.prisma.verification_code.deleteMany({ where: { phone: phone.trim() } });
+
+    return { success: true };
+  }
+
   async getCodes(group: string) {
     if (!group?.trim()) {
       return { success: false, message: 'group 파라미터는 필수입니다.' };
