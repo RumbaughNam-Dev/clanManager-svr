@@ -1618,6 +1618,11 @@ export class AllblueService {
     await this.prisma.blocked_user.create({
       data: { userId, blockedId },
     });
+
+    // 친한친구에서도 제거
+    await this.prisma.close_friend.deleteMany({
+      where: { userId, friendId: blockedId },
+    });
     return { success: true };
   }
 
