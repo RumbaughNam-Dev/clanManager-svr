@@ -561,7 +561,7 @@ export class AllblueService {
       const fileName = `${userId}_${Date.now()}.${ext}`;
       fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
       const baseUrl = this.config.get<string>('BASE_URL', 'https://api.rumbaugh.co.kr');
-      profileImage = `${baseUrl}/uploads/profile/${fileName}`;
+      profileImage = `${baseUrl}/allblue/uploads/profile/${fileName}`;
     }
 
     await this.prisma.user.update({
@@ -587,7 +587,7 @@ export class AllblueService {
       const fileName = `${userId}_${Date.now()}.${ext}`;
       fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
       const baseUrl = this.config.get<string>('BASE_URL', 'https://api.rumbaugh.co.kr');
-      imageUrl = `${baseUrl}/uploads/certs/${fileName}`;
+      imageUrl = `${baseUrl}/allblue/uploads/certs/${fileName}`;
     }
 
     await this.prisma.cert_request.create({
@@ -1752,7 +1752,7 @@ export class AllblueService {
         const fileName = `${randomUUID()}_${file.originalname}`;
         fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
         const baseUrl = this.config.get<string>('BASE_URL', 'https://api.rumbaugh.co.kr');
-        fileUrl = `${baseUrl}/uploads/inquiries/${inquiry.id}/${fileName}`;
+        fileUrl = `${baseUrl}/allblue/uploads/inquiries/${inquiry.id}/${fileName}`;
       }
 
       await this.prisma.inquiry_attachment.create({
