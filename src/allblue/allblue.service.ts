@@ -1793,6 +1793,32 @@ export class AllblueService {
     return { success: true };
   }
 
+  async withdraw(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { userId } });
+    if (!user) {
+      return { success: false, message: '존재하지 않는 사용자입니다.' };
+    }
+
+    await this.prisma.$transaction([
+      // userId (String FK) 참조 테이블
+      this.prisma.inquiry.deleteMany({ where: { userId } }),
+      this.prisma.close_friend.deleteMany({ where: { OR: [{ userId }, { friendId: userId }] } }),
+      this.prisma.blocked_user.deleteMany({ where: { OR: [{ userId }, { blockedId: userId }] } }),
+      this.prisma.dive_buddy.deleteMany({ where: { OR: [{ userId }, { buddyId: userId }] } }),
+      this.prisma.schedule_participant.deleteMany({ where: { userId } }),
+      this.prisma.user_license.deleteMany({ where: { OR: [{ userId }, { instructorId: userId }] } }),
+      // user.id (Int FK) 참조 테이블
+      this.prisma.login_history.deleteMany({ where: { userId: user.id } }),
+      this.prisma.cert_request.deleteMany({ where: { userId: user.id } }),
+      this.prisma.user_license_achievement.deleteMany({ where: { OR: [{ userId: user.id }, { completedBy: user.id }] } }),
+      this.prisma.user_profile.deleteMany({ where: { userId: user.id } }),
+      // user 삭제
+      this.prisma.user.delete({ where: { userId } }),
+    ]);
+
+    return { success: true };
+  }
+
   private async checkAdmin(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
       where: { userId },

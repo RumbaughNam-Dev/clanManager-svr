@@ -292,6 +292,12 @@ export class AllblueController {
     return this.allblueService.deleteInquiry(Number(id), req.user.userId);
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Delete('auth/withdraw')
+  withdraw(@Req() req: any) {
+    return this.allblueService.withdraw(req.user.userId);
+  }
+
   @Post('auth/send-code')
   sendVerificationCode(@Body() body: { phone: string }) {
     return this.allblueService.sendVerificationCode(body.phone);
