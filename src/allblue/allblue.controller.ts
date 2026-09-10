@@ -243,6 +243,18 @@ export class AllblueController {
     return this.allblueService.unblockUser(req.user.userId, blockedId);
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('inquiries')
+  getInquiries(@Req() req: any) {
+    return this.allblueService.getInquiries(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('inquiries')
+  createInquiry(@Body() body: { title: string; content: string }, @Req() req: any) {
+    return this.allblueService.createInquiry(req.user.userId, body);
+  }
+
   @Post('auth/send-code')
   sendVerificationCode(@Body() body: { phone: string }) {
     return this.allblueService.sendVerificationCode(body.phone);

@@ -1666,6 +1666,44 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getInquiries(userId: string) {
+    const inquiries = await this.prisma.inquiry.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      inquiries: inquiries.map(i => ({
+        id: i.id,
+        title: i.title,
+        content: i.content,
+        status: i.status,
+        answer: i.answer ?? null,
+        answeredAt: i.answeredAt?.toISOString() ?? null,
+        createdAt: i.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async createInquiry(userId: string, body: { title: string; content: string }) {
+    if (!body.title?.trim()) {
+      return { success: false, message: '제목을 입력해주세요.' };
+    }
+    if (!body.content?.trim()) {
+      return { success: false, message: '내용을 입력해주세요.' };
+    }
+
+    await this.prisma.inquiry.create({
+      data: {
+        userId,
+        title: body.title.trim(),
+        content: body.content.trim(),
+      },
+    });
+
+    return { success: true };
+  }
+
   async sendVerificationCode(phone: string) {
     if (!phone?.trim() || !/^\d{10,11}$/.test(phone.trim())) {
       return { success: false, message: '전화번호를 올바르게 입력해주세요.' };
