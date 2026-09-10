@@ -250,6 +250,18 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('inquiries/pending-count')
+  getInquiryPendingCount(@Req() req: any) {
+    return this.allblueService.getInquiryPendingCount(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('inquiries/all')
+  getAllInquiries(@Req() req: any) {
+    return this.allblueService.getAllInquiries(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Get('inquiries/:id')
   getInquiryDetail(@Param('id') id: string, @Req() req: any) {
     return this.allblueService.getInquiryDetail(Number(id), req.user.userId);
@@ -266,6 +278,12 @@ export class AllblueController {
     @Req() req: any,
   ) {
     return this.allblueService.createInquiry(req.user.userId, body, file);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('inquiries/:id/answer')
+  answerInquiry(@Param('id') id: string, @Body() body: { answer: string }, @Req() req: any) {
+    return this.allblueService.answerInquiry(Number(id), body.answer, req.user.userId);
   }
 
   @UseGuards(AllblueJwtAuthGuard)

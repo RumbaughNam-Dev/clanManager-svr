@@ -1793,6 +1793,79 @@ export class AllblueService {
     return { success: true };
   }
 
+  private async checkAdmin(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { userId },
+      select: { profile: { select: { level: true } } },
+    });
+    return user?.profile?.level === 'A';
+  }
+
+  async getInquiryPendingCount(userId: string) {
+    if (!(await this.checkAdmin(userId))) {
+      return { success: false, message: '관리자 권한이 필요합니다.' };
+    }
+
+    const count = await this.prisma.inquiry.count({
+      where: { status: 'PENDING' },
+    });
+
+    return { count };
+  }
+
+  async getAllInquiries(userId: string) {
+    if (!(await this.checkAdmin(userId))) {
+      return { success: false, message: '관리자 권한이 필요합니다.' };
+    }
+
+    const inquiries = await this.prisma.inquiry.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const userIds = [...new Set(inquiries.map(i => i.userId))];
+    const users = await this.prisma.user.findMany({
+      where: { userId: { in: userIds } },
+      select: { userId: true, userName: true },
+    });
+    const userMap = new Map(users.map(u => [u.userId, u.userName]));
+
+    return {
+      inquiries: inquiries.map(i => ({
+        id: i.id,
+        userId: i.userId,
+        userName: userMap.get(i.userId) ?? null,
+        title: i.title,
+        status: i.status,
+        createdAt: i.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async answerInquiry(id: number, answer: string, userId: string) {
+    if (!(await this.checkAdmin(userId))) {
+      return { success: false, message: '관리자 권한이 필요합니다.' };
+    }
+    if (!answer?.trim()) {
+      return { success: false, message: '답변 내용을 입력해주세요.' };
+    }
+
+    const inquiry = await this.prisma.inquiry.findUnique({ where: { id } });
+    if (!inquiry) {
+      return { success: false, message: '존재하지 않는 문의입니다.' };
+    }
+
+    await this.prisma.inquiry.update({
+      where: { id },
+      data: {
+        answer: answer.trim(),
+        status: 'ANSWERED',
+        answeredAt: new Date(),
+      },
+    });
+
+    return { success: true };
+  }
+
   async sendVerificationCode(phone: string) {
     if (!phone?.trim() || !/^\d{10,11}$/.test(phone.trim())) {
       return { success: false, message: '전화번호를 올바르게 입력해주세요.' };
