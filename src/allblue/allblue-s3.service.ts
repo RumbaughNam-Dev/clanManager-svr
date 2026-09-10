@@ -33,7 +33,7 @@ export class AllblueS3Service {
 
     const base64Body = base64Data.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Body, 'base64');
-    const key = `signatures/${uuid}_${type}_${Date.now()}.png`;
+    const key = `allblue/signatures/${uuid}_${type}_${Date.now()}.png`;
 
     await this.s3.send(new PutObjectCommand({
       Bucket: this.bucket,
