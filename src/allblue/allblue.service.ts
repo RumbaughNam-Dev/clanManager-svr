@@ -1686,7 +1686,10 @@ export class AllblueService {
   }
 
   async getInquiryDetail(id: number, userId: string) {
-    const inquiry = await this.prisma.inquiry.findUnique({ where: { id } });
+    const inquiry = await this.prisma.inquiry.findUnique({
+      where: { id },
+      include: { attachment: true },
+    });
 
     if (!inquiry) {
       return { success: false, message: '존재하지 않는 문의입니다.' };
@@ -1704,11 +1707,20 @@ export class AllblueService {
         answer: inquiry.answer ?? null,
         answeredAt: inquiry.answeredAt?.toISOString() ?? null,
         createdAt: inquiry.createdAt.toISOString(),
+        attachment: inquiry.attachment
+          ? {
+              id: inquiry.attachment.id,
+              fileUrl: inquiry.attachment.fileUrl,
+              fileName: inquiry.attachment.fileName,
+              fileSize: inquiry.attachment.fileSize,
+              mimeType: inquiry.attachment.mimeType,
+            }
+          : null,
       },
     };
   }
 
-  async createInquiry(userId: string, body: { title: string; content: string }) {
+  async createInquiry(userId: string, body: { title: string; content: string }, file?: Express.Multer.File) {
     if (!body.title?.trim()) {
       return { success: false, message: '제목을 입력해주세요.' };
     }
@@ -1716,13 +1728,67 @@ export class AllblueService {
       return { success: false, message: '내용을 입력해주세요.' };
     }
 
-    await this.prisma.inquiry.create({
+    const inquiry = await this.prisma.inquiry.create({
       data: {
         userId,
         title: body.title.trim(),
         content: body.content.trim(),
       },
     });
+
+    if (file) {
+      const key = `inquiries/${inquiry.id}/${randomUUID()}_${file.originalname}`;
+      const isImage = file.mimetype.startsWith('image/');
+      let fileUrl = await this.s3.uploadFile(
+        file.buffer,
+        key,
+        file.mimetype,
+        isImage ? undefined : `attachment; filename="${encodeURIComponent(file.originalname)}"`,
+      );
+
+      if (!fileUrl) {
+        const uploadDir = path.join(process.cwd(), 'uploads', 'inquiries', String(inquiry.id));
+        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+        const fileName = `${randomUUID()}_${file.originalname}`;
+        fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
+        const baseUrl = this.config.get<string>('BASE_URL', 'https://api.rumbaugh.co.kr');
+        fileUrl = `${baseUrl}/uploads/inquiries/${inquiry.id}/${fileName}`;
+      }
+
+      await this.prisma.inquiry_attachment.create({
+        data: {
+          inquiryId: inquiry.id,
+          fileUrl,
+          fileName: file.originalname,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+        },
+      });
+    }
+
+    return { success: true };
+  }
+
+  async deleteInquiry(id: number, userId: string) {
+    const inquiry = await this.prisma.inquiry.findUnique({
+      where: { id },
+      include: { attachment: true },
+    });
+
+    if (!inquiry) {
+      return { success: false, message: '존재하지 않는 문의입니다.' };
+    }
+    if (inquiry.userId !== userId) {
+      return { success: false, message: '삭제 권한이 없습니다.' };
+    }
+
+    // S3 파일 삭제
+    if (inquiry.attachment) {
+      const s3Key = this.s3.extractKeyFromUrl(inquiry.attachment.fileUrl);
+      if (s3Key) await this.s3.deleteFiles([s3Key]);
+    }
+
+    await this.prisma.inquiry.delete({ where: { id } });
 
     return { success: true };
   }

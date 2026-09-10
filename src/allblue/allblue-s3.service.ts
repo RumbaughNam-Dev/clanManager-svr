@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
 @Injectable()
 export class AllblueS3Service {
@@ -45,7 +45,7 @@ export class AllblueS3Service {
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
   }
 
-  async uploadFile(buffer: Buffer, key: string, contentType: string): Promise<string | null> {
+  async uploadFile(buffer: Buffer, key: string, contentType: string, contentDisposition?: string): Promise<string | null> {
     if (!this.s3) return null;
 
     await this.s3.send(new PutObjectCommand({
@@ -53,9 +53,29 @@ export class AllblueS3Service {
       Key: key,
       Body: buffer,
       ContentType: contentType,
+      ...(contentDisposition && { ContentDisposition: contentDisposition }),
     }));
 
     return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
+  async deleteFiles(keys: string[]): Promise<void> {
+    if (!this.s3 || keys.length === 0) return;
+
+    await this.s3.send(new DeleteObjectsCommand({
+      Bucket: this.bucket,
+      Delete: {
+        Objects: keys.map(Key => ({ Key })),
+      },
+    }));
+  }
+
+  extractKeyFromUrl(url: string): string | null {
+    const prefix = `https://${this.bucket}.s3.${this.region}.amazonaws.com/`;
+    if (url.startsWith(prefix)) {
+      return url.slice(prefix.length);
+    }
+    return null;
   }
 
   async processSignatureData(data: string | undefined, uuid: string, type: 'diver' | 'doctor'): Promise<string | undefined> {

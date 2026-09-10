@@ -400,7 +400,23 @@ model inquiry {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
+  attachment inquiry_attachment?
+
   @@index([userId, createdAt(sort: Desc)])
+}
+
+model inquiry_attachment {
+  id        Int      @id @default(autoincrement()) @db.UnsignedInt
+  inquiryId Int      @unique @map("inquiry_id") @db.UnsignedInt
+  fileUrl   String   @map("file_url") @db.VarChar(500)
+  fileName  String   @map("file_name") @db.VarChar(255)
+  fileSize  Int      @default(0) @map("file_size") @db.UnsignedInt
+  mimeType  String   @default("application/octet-stream") @map("mime_type") @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  inquiry inquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+
+  @@map("inquiry_attachment")
 }
 
 model verification_code {

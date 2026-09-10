@@ -257,8 +257,21 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Post('inquiries')
-  createInquiry(@Body() body: { title: string; content: string }, @Req() req: any) {
-    return this.allblueService.createInquiry(req.user.userId, body);
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: 10 * 1024 * 1024 },
+  }))
+  createInquiry(
+    @Body() body: { title: string; content: string },
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any,
+  ) {
+    return this.allblueService.createInquiry(req.user.userId, body, file);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Delete('inquiries/:id')
+  deleteInquiry(@Param('id') id: string, @Req() req: any) {
+    return this.allblueService.deleteInquiry(Number(id), req.user.userId);
   }
 
   @Post('auth/send-code')
