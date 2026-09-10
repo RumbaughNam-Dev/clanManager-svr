@@ -46,17 +46,25 @@ export class AllblueS3Service {
   }
 
   async uploadFile(buffer: Buffer, key: string, contentType: string, contentDisposition?: string): Promise<string | null> {
-    if (!this.s3) return null;
+    if (!this.s3) {
+      console.error('[S3 Upload Error] S3 client not initialized — check AWS env vars');
+      return null;
+    }
 
-    await this.s3.send(new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType,
-      ...(contentDisposition && { ContentDisposition: contentDisposition }),
-    }));
+    try {
+      await this.s3.send(new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+        ...(contentDisposition && { ContentDisposition: contentDisposition }),
+      }));
 
-    return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+      return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${key}`;
+    } catch (err) {
+      console.error('[S3 Upload Error]', err);
+      return null;
+    }
   }
 
   async deleteFiles(keys: string[]): Promise<void> {
