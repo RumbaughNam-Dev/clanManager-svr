@@ -389,20 +389,26 @@ model blocked_user {
   @@index([userId])
 }
 
+enum InquiryStatus {
+  PENDING
+  ANSWERED
+}
+
 model inquiry {
-  id         Int       @id @default(autoincrement()) @db.UnsignedInt
-  userId     String    @map("user_id") @db.VarChar(50)
-  title      String    @db.VarChar(200)
-  content    String    @db.Text
-  status     String    @default("PENDING") @db.VarChar(20)
-  answer     String?   @db.Text
-  answeredAt DateTime? @map("answered_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
+  id         Int           @id @default(autoincrement()) @db.UnsignedInt
+  userId     String        @map("user_id") @db.VarChar(50)
+  title      String        @db.VarChar(200)
+  content    String        @db.Text
+  status     InquiryStatus @default(PENDING)
+  answer     String?       @db.Text
+  answeredAt DateTime?     @map("answered_at")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
 
   attachment inquiry_attachment?
 
   @@index([userId, createdAt(sort: Desc)])
+  @@map("inquiry")
 }
 
 model inquiry_attachment {
