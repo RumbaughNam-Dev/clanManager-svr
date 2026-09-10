@@ -553,15 +553,10 @@ export class AllblueService {
 
     const ext = file.originalname.split('.').pop() ?? 'jpg';
     const key = `profile/${userId}_${Date.now()}.${ext}`;
-    let profileImage = await this.s3.uploadFile(file.buffer, key, file.mimetype);
+    const profileImage = await this.s3.uploadFile(file.buffer, key, file.mimetype);
 
     if (!profileImage) {
-      const uploadDir = path.join(process.cwd(), 'uploads', 'profile');
-      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-      const fileName = `${userId}_${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
-      const baseUrl = this.config.get<string>('BASE_URL', 'https://api.rumbaugh.co.kr');
-      profileImage = `${baseUrl}/allblue/uploads/profile/${fileName}`;
+      return { success: false, message: 'S3 업로드에 실패했습니다.' };
     }
 
     await this.prisma.user.update({
@@ -579,15 +574,10 @@ export class AllblueService {
 
     const ext = file.originalname.split('.').pop() ?? 'jpg';
     const key = `certs/${userId}_${Date.now()}.${ext}`;
-    let imageUrl = await this.s3.uploadFile(file.buffer, key, file.mimetype);
+    const imageUrl = await this.s3.uploadFile(file.buffer, key, file.mimetype);
 
     if (!imageUrl) {
-      const uploadDir = path.join(process.cwd(), 'uploads', 'certs');
-      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-      const fileName = `${userId}_${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
-      const baseUrl = this.config.get<string>('BASE_URL', 'https://api.rumbaugh.co.kr');
-      imageUrl = `${baseUrl}/allblue/uploads/certs/${fileName}`;
+      return { success: false, message: 'S3 업로드에 실패했습니다.' };
     }
 
     await this.prisma.cert_request.create({
@@ -1739,7 +1729,7 @@ export class AllblueService {
     if (file) {
       const key = `inquiries/${inquiry.id}/${randomUUID()}_${file.originalname}`;
       const isImage = file.mimetype.startsWith('image/');
-      let fileUrl = await this.s3.uploadFile(
+      const fileUrl = await this.s3.uploadFile(
         file.buffer,
         key,
         file.mimetype,
@@ -1747,12 +1737,7 @@ export class AllblueService {
       );
 
       if (!fileUrl) {
-        const uploadDir = path.join(process.cwd(), 'uploads', 'inquiries', String(inquiry.id));
-        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-        const fileName = `${randomUUID()}_${file.originalname}`;
-        fs.writeFileSync(path.join(uploadDir, fileName), file.buffer);
-        const baseUrl = this.config.get<string>('BASE_URL', 'https://api.rumbaugh.co.kr');
-        fileUrl = `${baseUrl}/allblue/uploads/inquiries/${inquiry.id}/${fileName}`;
+        return { success: false, message: 'S3 업로드에 실패했습니다.' };
       }
 
       await this.prisma.inquiry_attachment.create({
