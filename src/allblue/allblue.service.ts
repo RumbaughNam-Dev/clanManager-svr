@@ -1685,6 +1685,29 @@ export class AllblueService {
     };
   }
 
+  async getInquiryDetail(id: number, userId: string) {
+    const inquiry = await this.prisma.inquiry.findUnique({ where: { id } });
+
+    if (!inquiry) {
+      return { success: false, message: '존재하지 않는 문의입니다.' };
+    }
+    if (inquiry.userId !== userId) {
+      return { success: false, message: '조회 권한이 없습니다.' };
+    }
+
+    return {
+      inquiry: {
+        id: inquiry.id,
+        title: inquiry.title,
+        content: inquiry.content,
+        status: inquiry.status,
+        answer: inquiry.answer ?? null,
+        answeredAt: inquiry.answeredAt?.toISOString() ?? null,
+        createdAt: inquiry.createdAt.toISOString(),
+      },
+    };
+  }
+
   async createInquiry(userId: string, body: { title: string; content: string }) {
     if (!body.title?.trim()) {
       return { success: false, message: '제목을 입력해주세요.' };

@@ -250,6 +250,12 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('inquiries/:id')
+  getInquiryDetail(@Param('id') id: string, @Req() req: any) {
+    return this.allblueService.getInquiryDetail(Number(id), req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Post('inquiries')
   createInquiry(@Body() body: { title: string; content: string }, @Req() req: any) {
     return this.allblueService.createInquiry(req.user.userId, body);
