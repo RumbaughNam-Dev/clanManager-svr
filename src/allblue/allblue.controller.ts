@@ -244,6 +244,42 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('friends/groups')
+  getFriendGroups(@Req() req: any) {
+    return this.allblueService.getFriendGroups(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('friends/groups')
+  createFriendGroup(@Body() body: { name: string }, @Req() req: any) {
+    return this.allblueService.createFriendGroup(req.user.userId, body.name);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Delete('friends/groups/:id')
+  deleteFriendGroup(@Param('id') id: string, @Req() req: any) {
+    return this.allblueService.deleteFriendGroup(Number(id), req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('friends/groups/:id/members')
+  getFriendGroupMembers(@Param('id') id: string, @Req() req: any) {
+    return this.allblueService.getFriendGroupMembers(Number(id), req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('friends/groups/:id/members')
+  addFriendGroupMember(@Param('id') id: string, @Body() body: { userId: string }, @Req() req: any) {
+    return this.allblueService.addFriendGroupMember(Number(id), body.userId, req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Delete('friends/groups/:id/members/:userId')
+  removeFriendGroupMember(@Param('id') id: string, @Param('userId') userId: string, @Req() req: any) {
+    return this.allblueService.removeFriendGroupMember(Number(id), userId, req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Get('inquiries')
   getInquiries(@Req() req: any) {
     return this.allblueService.getInquiries(req.user.userId);

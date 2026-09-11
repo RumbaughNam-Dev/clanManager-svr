@@ -46,6 +46,8 @@ model user {
   instructedLicenses      user_license[]             @relation("ul_instructor")
   debriefings             debriefing[]               @relation("debriefing_creator")
   closeFriendOf           close_friend[]             @relation("cf_friend")
+  friendGroups            friend_group[]             @relation("fg_owner")
+  friendGroupMemberships  friend_group_member[]      @relation("fgm_member")
 }
 
 model user_license {
@@ -423,6 +425,32 @@ model inquiry_attachment {
   inquiry inquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
 
   @@map("inquiry_attachment")
+}
+
+model friend_group {
+  id        Int      @id @default(autoincrement()) @db.UnsignedInt
+  userId    String   @map("user_id") @db.VarChar(50)
+  name      String   @db.VarChar(50)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    user                  @relation("fg_owner", fields: [userId], references: [userId], onDelete: Cascade)
+  members friend_group_member[]
+
+  @@map("friend_group")
+}
+
+model friend_group_member {
+  id        Int      @id @default(autoincrement()) @db.UnsignedInt
+  groupId   Int      @map("group_id") @db.UnsignedInt
+  userId    String   @map("user_id") @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  group friend_group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  user         @relation("fgm_member", fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("friend_group_member")
 }
 
 model verification_code {

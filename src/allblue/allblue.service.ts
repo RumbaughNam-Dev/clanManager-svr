@@ -1666,6 +1666,97 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getFriendGroups(userId: string) {
+    const groups = await this.prisma.friend_group.findMany({
+      where: { userId },
+      orderBy: { sortOrder: 'asc' },
+      include: { _count: { select: { members: true } } },
+    });
+
+    return {
+      groups: groups.map(g => ({
+        id: g.id,
+        name: g.name,
+        memberCount: g._count.members,
+      })),
+    };
+  }
+
+  async createFriendGroup(userId: string, name: string) {
+    if (!name?.trim()) {
+      return { success: false, message: '그룹 이름을 입력해주세요.' };
+    }
+
+    const group = await this.prisma.friend_group.create({
+      data: { userId, name: name.trim() },
+    });
+
+    return { success: true, group: { id: group.id, name: group.name } };
+  }
+
+  async deleteFriendGroup(id: number, userId: string) {
+    const group = await this.prisma.friend_group.findUnique({ where: { id } });
+    if (!group) return { success: false, message: '존재하지 않는 그룹입니다.' };
+    if (group.userId !== userId) return { success: false, message: '삭제 권한이 없습니다.' };
+
+    await this.prisma.friend_group.delete({ where: { id } });
+    return { success: true };
+  }
+
+  async getFriendGroupMembers(groupId: number, userId: string) {
+    const group = await this.prisma.friend_group.findUnique({ where: { id: groupId } });
+    if (!group) return { success: false, message: '존재하지 않는 그룹입니다.' };
+    if (group.userId !== userId) return { success: false, message: '조회 권한이 없습니다.' };
+
+    const members = await this.prisma.friend_group_member.findMany({
+      where: { groupId },
+      include: {
+        user: {
+          select: { userId: true, nickname: true, userName: true, profileImage: true, profile: { select: { level: true } } },
+        },
+      },
+    });
+
+    return {
+      members: members.map(m => ({
+        userId: m.user.userId,
+        nickname: m.user.nickname,
+        name: m.user.userName ?? null,
+        profileImage: m.user.profileImage ?? null,
+        level: m.user.profile?.level ?? null,
+      })),
+    };
+  }
+
+  async addFriendGroupMember(groupId: number, memberUserId: string, ownerUserId: string) {
+    const group = await this.prisma.friend_group.findUnique({ where: { id: groupId } });
+    if (!group) return { success: false, message: '존재하지 않는 그룹입니다.' };
+    if (group.userId !== ownerUserId) return { success: false, message: '권한이 없습니다.' };
+
+    const existing = await this.prisma.friend_group_member.findUnique({
+      where: { groupId_userId: { groupId, userId: memberUserId } },
+    });
+    if (existing) return { success: true };
+
+    await this.prisma.friend_group_member.create({
+      data: { groupId, userId: memberUserId },
+    });
+
+    return { success: true };
+  }
+
+  async removeFriendGroupMember(groupId: number, memberUserId: string, ownerUserId: string) {
+    const group = await this.prisma.friend_group.findUnique({ where: { id: groupId } });
+    if (!group) return { success: false, message: '존재하지 않는 그룹입니다.' };
+    if (group.userId !== ownerUserId) return { success: false, message: '권한이 없습니다.' };
+
+    await this.prisma.friend_group_member.deleteMany({
+      where: { groupId, userId: memberUserId },
+    });
+
+    return { success: true };
+  }
+
   async getInquiries(userId: string) {
     const inquiries = await this.prisma.inquiry.findMany({
       where: { userId },
@@ -1802,6 +1893,7 @@ export class AllblueService {
     await this.prisma.$transaction([
       // userId (String FK) 참조 테이블
       this.prisma.inquiry.deleteMany({ where: { userId } }),
+      this.prisma.friend_group.deleteMany({ where: { userId } }),
       this.prisma.close_friend.deleteMany({ where: { OR: [{ userId }, { friendId: userId }] } }),
       this.prisma.blocked_user.deleteMany({ where: { OR: [{ userId }, { blockedId: userId }] } }),
       this.prisma.dive_buddy.deleteMany({ where: { OR: [{ userId }, { buddyId: userId }] } }),
