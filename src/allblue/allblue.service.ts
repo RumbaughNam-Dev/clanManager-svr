@@ -834,6 +834,32 @@ export class AllblueService {
           { participants: { some: { userId: { in: friendIds } } } },
         ],
       };
+    } else if (filter?.startsWith('group_')) {
+      const groupId = Number(filter.split('_')[1]);
+      if (!groupId || isNaN(groupId)) {
+        return { success: false, message: '유효하지 않은 그룹 ID입니다.' };
+      }
+
+      const group = await this.prisma.friend_group.findUnique({ where: { id: groupId } });
+      if (!group) return { success: false, message: '존재하지 않는 그룹입니다.' };
+      if (group.userId !== userId) return { success: false, message: '조회 권한이 없습니다.' };
+
+      const members = await this.prisma.friend_group_member.findMany({
+        where: { groupId },
+        select: { userId: true },
+      });
+      const memberIds = members.map(m => m.userId);
+
+      if (memberIds.length === 0) {
+        return { schedules: [] };
+      }
+
+      whereFilter = {
+        OR: [
+          { instructorId: { in: memberIds } },
+          { participants: { some: { userId: { in: memberIds } } } },
+        ],
+      };
     } else {
       whereFilter = {
         OR: [
