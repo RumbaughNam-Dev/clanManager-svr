@@ -2227,6 +2227,31 @@ export class AllblueService {
       update: { level },
     });
 
+    // 강사(level=5)로 승격 시 schedulePublic 자동 설정
+    if (level === '5') {
+      const user = await this.prisma.user.findUnique({
+        where: { id: request.userId },
+        select: { userId: true },
+      });
+
+      if (user) {
+        const existing = await this.prisma.user_setting.findUnique({
+          where: { userId_settingKey: { userId: user.userId, settingKey: 'schedulePublic' } },
+        });
+
+        if (!existing) {
+          await this.prisma.user_setting.create({
+            data: { userId: user.userId, settingKey: 'schedulePublic', settingValue: 'Y' },
+          });
+        } else if (existing.createdAt.getTime() === existing.updatedAt.getTime()) {
+          await this.prisma.user_setting.update({
+            where: { id: existing.id },
+            data: { settingValue: 'Y' },
+          });
+        }
+      }
+    }
+
     return { success: true };
   }
 

@@ -46,6 +46,7 @@ model user {
   instructedLicenses      user_license[]             @relation("ul_instructor")
   debriefings             debriefing[]               @relation("debriefing_creator")
   closeFriendOf           close_friend[]             @relation("cf_friend")
+  settings                user_setting[]
   friendGroups            friend_group[]             @relation("fg_owner")
   friendGroupMemberships  friend_group_member[]      @relation("fgm_member")
 }
@@ -452,6 +453,20 @@ model friend_group_member {
 
   @@unique([groupId, userId])
   @@map("friend_group_member")
+}
+
+model user_setting {
+  id           Int      @id @default(autoincrement()) @db.UnsignedInt
+  userId       String   @map("user_id") @db.VarChar(50)
+  settingKey   String   @map("setting_key") @db.VarChar(50)
+  settingValue String   @default("") @map("setting_value") @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user user @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([userId, settingKey], map: "uk_user_setting")
+  @@map("user_setting")
 }
 
 model verification_code {
