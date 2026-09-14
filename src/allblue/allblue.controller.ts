@@ -131,8 +131,8 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Get('schedule/monthly')
-  getMonthlySchedules(@Query('year') year: string, @Query('month') month: string, @Req() req: any) {
-    return this.allblueService.getMonthlySchedules(year, month, req.user.userId);
+  getMonthlySchedules(@Query('year') year: string, @Query('month') month: string, @Query('filter') filter: string, @Req() req: any) {
+    return this.allblueService.getMonthlySchedules(year, month, req.user.userId, filter);
   }
 
   @UseGuards(AllblueJwtAuthGuard)

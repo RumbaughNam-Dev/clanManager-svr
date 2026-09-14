@@ -800,7 +800,7 @@ export class AllblueService {
     };
   }
 
-  async getMonthlySchedules(yearStr: string, monthStr: string, userId: string) {
+  async getMonthlySchedules(yearStr: string, monthStr: string, userId: string, filter?: string) {
     const year = Number(yearStr);
     const month = Number(monthStr);
 
@@ -811,13 +811,42 @@ export class AllblueService {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 1);
 
-    const schedules = await this.prisma.schedule.findMany({
-      where: {
-        scheduleDate: { gte: startDate, lt: endDate },
+    let whereFilter: any;
+
+    if (filter === 'instructor') {
+      whereFilter = {
+        instructor: { profile: { level: { in: ['5', 'I'] } } },
+      };
+    } else if (filter === 'closeFriend') {
+      const closeFriends = await this.prisma.close_friend.findMany({
+        where: { userId },
+        select: { friendId: true },
+      });
+      const friendIds = closeFriends.map(f => f.friendId);
+
+      if (friendIds.length === 0) {
+        return { schedules: [] };
+      }
+
+      whereFilter = {
+        OR: [
+          { instructorId: { in: friendIds } },
+          { participants: { some: { userId: { in: friendIds } } } },
+        ],
+      };
+    } else {
+      whereFilter = {
         OR: [
           { instructorId: userId },
           { participants: { some: { userId } } },
         ],
+      };
+    }
+
+    const schedules = await this.prisma.schedule.findMany({
+      where: {
+        scheduleDate: { gte: startDate, lt: endDate },
+        ...whereFilter,
       },
       orderBy: [{ scheduleDate: 'asc' }, { startHour: 'asc' }, { startMinute: 'asc' }],
       include: {
