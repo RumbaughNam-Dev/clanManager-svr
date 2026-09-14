@@ -197,6 +197,7 @@ model schedule {
   poolId        Int?                   @map("pool_id") @db.UnsignedInt
   categoryCode  String                 @map("category_code") @db.VarChar(30)
   instructorId  String                 @map("instructor_id") @db.VarChar(50)
+  visibility    String                 @default("private") @db.VarChar(10)
   createdAt     DateTime               @default(now()) @map("created_at")
   updatedAt     DateTime               @updatedAt @map("updated_at")
   pool          diving_pool?           @relation(fields: [poolId], references: [id])

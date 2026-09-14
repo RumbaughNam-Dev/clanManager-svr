@@ -640,7 +640,7 @@ export class AllblueService {
   }
 
   async createSchedule(body: any, instructorUserId: string) {
-    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds, guests } = body;
+    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds, guests, visibility } = body;
 
     if (!title?.trim() || title.trim().length > 100) {
       return { success: false, message: '제목을 입력해주세요. (최대 100자)' };
@@ -665,6 +665,7 @@ export class AllblueService {
           poolId: poolId ?? null,
           categoryCode,
           instructorId: instructorUserId,
+          visibility: visibility === 'public' ? 'public' : 'private',
         },
       });
 
@@ -815,6 +816,7 @@ export class AllblueService {
 
     if (filter === 'instructor') {
       whereFilter = {
+        visibility: 'public',
         instructor: { profile: { level: { in: ['5', 'I'] } } },
       };
     } else if (filter === 'closeFriend') {
@@ -855,6 +857,7 @@ export class AllblueService {
       }
 
       whereFilter = {
+        visibility: 'public',
         OR: [
           { instructorId: { in: memberIds } },
           { participants: { some: { userId: { in: memberIds } } } },
@@ -909,6 +912,7 @@ export class AllblueService {
         return {
           id: s.id,
           title: s.title,
+          visibility: s.visibility,
           scheduleDate: dateStr,
           startHour: s.startHour,
           startMinute: s.startMinute,
@@ -984,6 +988,7 @@ export class AllblueService {
       schedule: {
         id: schedule.id,
         title: schedule.title,
+        visibility: schedule.visibility,
         isOwner,
         myParticipantId: myParticipant?.user?.id ?? null,
         scheduleDate: dateStr,
@@ -1055,7 +1060,7 @@ export class AllblueService {
   }
 
   async updateSchedule(id: number, body: any, instructorUserId: string) {
-    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds, guests } = body;
+    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds, guests, visibility } = body;
 
     const schedule = await this.prisma.schedule.findUnique({ where: { id } });
     if (!schedule) {
@@ -1089,6 +1094,7 @@ export class AllblueService {
           startMinute,
           poolId: poolId ?? null,
           categoryCode,
+          ...(visibility !== undefined && { visibility: visibility === 'public' ? 'public' : 'private' }),
         },
       });
 
