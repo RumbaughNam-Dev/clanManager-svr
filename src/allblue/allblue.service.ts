@@ -419,6 +419,33 @@ export class AllblueService {
     return { success: true };
   }
 
+  async getUserSettings(userId: string) {
+    const settings = await this.prisma.user_setting.findMany({
+      where: { userId },
+    });
+
+    const map: Record<string, string> = {};
+    for (const s of settings) {
+      map[s.settingKey] = s.settingValue;
+    }
+
+    return { settings: map };
+  }
+
+  async updateUserSetting(userId: string, key: string, value: string) {
+    if (!key?.trim()) {
+      return { success: false, message: '설정 키를 입력해주세요.' };
+    }
+
+    await this.prisma.user_setting.upsert({
+      where: { userId_settingKey: { userId, settingKey: key } },
+      create: { userId, settingKey: key, settingValue: value },
+      update: { settingValue: value },
+    });
+
+    return { success: true };
+  }
+
   async getProfile(userId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

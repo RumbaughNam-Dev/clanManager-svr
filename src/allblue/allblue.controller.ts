@@ -81,6 +81,18 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('user/settings')
+  getUserSettings(@Req() req: any) {
+    return this.allblueService.getUserSettings(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('user/settings')
+  updateUserSetting(@Body() body: { key: string; value: string }, @Req() req: any) {
+    return this.allblueService.updateUserSetting(req.user.userId, body.key, body.value);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Put('profile')
   updateProfile(@Req() req: any, @Body() body: any) {
     return this.allblueService.updateProfile(Number(req.user.sub), body);
