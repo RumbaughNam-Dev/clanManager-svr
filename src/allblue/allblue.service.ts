@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import { AllblueS3Service } from './allblue-s3.service';
+import { ASSOCIATION_PRIORITY } from './constants';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
@@ -666,6 +667,27 @@ export class AllblueService {
     };
   }
 
+  private async findPriorityLicenseId(tx: any, participantUserId: string, instructorUserId: string): Promise<number | null> {
+    const inProgressLicenses = await tx.user_license.findMany({
+      where: {
+        userId: participantUserId,
+        instructorId: instructorUserId,
+        status: 'IN_PROGRESS',
+      },
+      include: { license: { select: { id: true, associationId: true } } },
+    });
+
+    if (inProgressLicenses.length === 0) return null;
+
+    inProgressLicenses.sort((a: any, b: any) => {
+      const aIdx = ASSOCIATION_PRIORITY.indexOf(a.license.associationId);
+      const bIdx = ASSOCIATION_PRIORITY.indexOf(b.license.associationId);
+      return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+    });
+
+    return inProgressLicenses[0].license.id;
+  }
+
   async createSchedule(body: any, instructorUserId: string) {
     const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds, guests, visibility } = body;
 
@@ -717,18 +739,52 @@ export class AllblueService {
         });
 
         // 면책동의서·의료진술서 자동 생성
+        const isCertification = categoryCode === 'CERTIFICATION';
+
         for (const u of users) {
-          await tx.form_submission.createMany({
-            data: ['liability', 'medical'].map(formId => ({
-              uuid: randomUUID(),
-              formId,
-              diverName: u.nickname ?? u.userName ?? '',
-              instructorId: instructor!.id,
-              instructorName: instructor!.nickname,
-              scheduleId: schedule.id,
-              participantUserId: u.userId,
-            })),
-          });
+          if (isCertification) {
+            const licenseId = await this.findPriorityLicenseId(tx, u.userId, instructorUserId);
+
+            for (const formId of ['liability', 'medical']) {
+              if (licenseId) {
+                const existing = await tx.form_submission.findFirst({
+                  where: {
+                    participantUserId: u.userId,
+                    instructorId: instructor!.id,
+                    licenseId,
+                    formId,
+                    status: 'submitted',
+                  },
+                });
+                if (existing) continue;
+              }
+
+              await tx.form_submission.create({
+                data: {
+                  uuid: randomUUID(),
+                  formId,
+                  diverName: u.nickname ?? u.userName ?? '',
+                  instructorId: instructor!.id,
+                  instructorName: instructor!.nickname,
+                  scheduleId: schedule.id,
+                  participantUserId: u.userId,
+                  licenseId: licenseId ?? null,
+                },
+              });
+            }
+          } else {
+            await tx.form_submission.createMany({
+              data: ['liability', 'medical'].map(formId => ({
+                uuid: randomUUID(),
+                formId,
+                diverName: u.nickname ?? u.userName ?? '',
+                instructorId: instructor!.id,
+                instructorName: instructor!.nickname,
+                scheduleId: schedule.id,
+                participantUserId: u.userId,
+              })),
+            });
+          }
         }
       }
 
@@ -1025,16 +1081,67 @@ export class AllblueService {
         categoryCode: schedule.categoryCode,
         categoryName: code?.nameKo ?? code?.name ?? schedule.categoryCode,
         instructorName: schedule.instructor.nickname,
-        participants: schedule.participants.map(p => {
+        participants: await Promise.all(schedule.participants.map(async p => {
           const isGuest = !p.user;
-          const waiver = schedule.formSubmissions.find(f =>
+          let waiver = schedule.formSubmissions.find(f =>
             f.formId === 'liability' &&
             (isGuest ? f.participantGuestId === p.guestId : f.participantUserId === p.userId),
           );
-          const medical = schedule.formSubmissions.find(f =>
+          let medical = schedule.formSubmissions.find(f =>
             f.formId === 'medical' &&
             (isGuest ? f.participantGuestId === p.guestId : f.participantUserId === p.userId),
           );
+
+          let waiverReused = false;
+          let medicalReused = false;
+
+          // 자격증 과정에서 재사용 문서 조회
+          if (!isGuest && schedule.categoryCode === 'CERTIFICATION') {
+            const instructorIntId = (await this.prisma.user.findUnique({
+              where: { userId: schedule.instructorId },
+              select: { id: true },
+            }))?.id;
+
+            if (instructorIntId) {
+              const licenseId = await this.findPriorityLicenseId(this.prisma, p.userId!, schedule.instructorId);
+
+              if (licenseId) {
+                if (!waiver) {
+                  const reusedWaiver = await this.prisma.form_submission.findFirst({
+                    where: {
+                      participantUserId: p.userId,
+                      instructorId: instructorIntId,
+                      licenseId,
+                      formId: 'liability',
+                      status: 'submitted',
+                    },
+                    select: { uuid: true, status: true },
+                  });
+                  if (reusedWaiver) {
+                    waiver = { ...reusedWaiver, formId: 'liability', participantUserId: p.userId, participantGuestId: null };
+                    waiverReused = true;
+                  }
+                }
+                if (!medical) {
+                  const reusedMedical = await this.prisma.form_submission.findFirst({
+                    where: {
+                      participantUserId: p.userId,
+                      instructorId: instructorIntId,
+                      licenseId,
+                      formId: 'medical',
+                      status: 'submitted',
+                    },
+                    select: { uuid: true, status: true },
+                  });
+                  if (reusedMedical) {
+                    medical = { ...reusedMedical, formId: 'medical', participantUserId: p.userId, participantGuestId: null };
+                    medicalReused = true;
+                  }
+                }
+              }
+            }
+          }
+
           const baseUrl = 'https://rumbaugh.co.kr/form';
 
           return {
@@ -1048,11 +1155,13 @@ export class AllblueService {
             medicalUrl: medical?.status === 'submitted' ? `${baseUrl}/${medical.uuid}` : null,
             waiverUuid: waiver?.uuid ?? null,
             medicalUuid: medical?.uuid ?? null,
+            waiverReused,
+            medicalReused,
             level: isGuest ? '0' : (p.user!.profile?.level ?? '0'),
             hasInProgressLicense: isGuest ? false : (p.user!.licenses?.length > 0),
             debriefingDone: debriefedIds.has(isGuest ? p.guest!.id : p.user!.id),
           };
-        }),
+        })),
       },
     };
   }

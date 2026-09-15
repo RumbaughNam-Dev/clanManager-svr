@@ -139,6 +139,7 @@ model form_submission {
   doctorAddressDetail String?  @db.VarChar(255)
   doctorChecks        Json?
   scheduleId          Int?     @map("schedule_id")
+  licenseId           Int?     @map("license_id")
   participantUserId   String?  @map("participant_user_id") @db.VarChar(50)
   participantGuestId  Int?     @map("participant_guest_id")
   createdAt          DateTime @default(now())
