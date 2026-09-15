@@ -65,6 +65,7 @@ model user_license {
   user              user      @relation("ul_user", fields: [userId], references: [userId])
   license           license   @relation(fields: [licenseId], references: [id])
   instructor        user?     @relation("ul_instructor", fields: [instructorId], references: [userId])
+  scheduleParticipantLicenses schedule_participant_license[]
 
   @@index([userId], map: "idx_ul_user")
   @@index([licenseId], map: "idx_ul_license")
@@ -210,16 +211,30 @@ model schedule {
 }
 
 model schedule_participant {
-  id          Int         @id @default(autoincrement()) @db.UnsignedInt
-  scheduleId  Int         @map("schedule_id") @db.UnsignedInt
-  userId      String?     @map("user_id") @db.VarChar(50)
-  guestId     Int?        @map("guest_id")
-  createdAt   DateTime    @default(now()) @map("created_at")
-  schedule    schedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  user        user?       @relation(fields: [userId], references: [userId])
-  guest       guest_user? @relation(fields: [guestId], references: [id])
+  id           Int         @id @default(autoincrement()) @db.UnsignedInt
+  scheduleId   Int         @map("schedule_id") @db.UnsignedInt
+  userId       String?     @map("user_id") @db.VarChar(50)
+  guestId      Int?        @map("guest_id")
+  categoryCode String?     @map("category_code") @db.VarChar(30)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  schedule     schedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  user         user?       @relation(fields: [userId], references: [userId])
+  guest        guest_user? @relation(fields: [guestId], references: [id])
+  licenses     schedule_participant_license[]
 
   @@unique([scheduleId, userId], map: "uk_schedule_user")
+}
+
+model schedule_participant_license {
+  id                    Int      @id @default(autoincrement()) @db.UnsignedInt
+  scheduleParticipantId Int      @map("schedule_participant_id") @db.UnsignedInt
+  userLicenseId         Int      @map("user_license_id") @db.UnsignedInt
+  createdAt             DateTime @default(now()) @map("created_at")
+  participant           schedule_participant @relation(fields: [scheduleParticipantId], references: [id], onDelete: Cascade)
+  userLicense           user_license         @relation(fields: [userLicenseId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleParticipantId, userLicenseId], map: "uk_spl")
+  @@map("schedule_participant_license")
 }
 
 model guest_user {

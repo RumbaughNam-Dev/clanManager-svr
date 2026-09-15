@@ -667,6 +667,86 @@ export class AllblueService {
     };
   }
 
+  async getInProgressLicenses(userIntId: number, instructorUserId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userIntId },
+      select: { userId: true },
+    });
+    if (!user) return { licenses: [] };
+
+    const licenses = await this.prisma.user_license.findMany({
+      where: {
+        userId: user.userId,
+        instructorId: instructorUserId,
+        status: 'IN_PROGRESS',
+      },
+      include: {
+        license: {
+          include: { association: { select: { name: true } } },
+        },
+      },
+    });
+
+    return {
+      licenses: licenses.map(ul => ({
+        userLicenseId: ul.id,
+        licenseId: ul.licenseId,
+        code: ul.license.code,
+        name: ul.license.name,
+        nameKo: ul.license.nameKo,
+        levelOrder: ul.license.levelOrder,
+        associationId: ul.license.associationId,
+        associationName: ul.license.association.name,
+      })),
+    };
+  }
+
+  async getAvailableLicenses(userIntId: number, associationId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userIntId },
+      select: { userId: true },
+    });
+    if (!user) return { licenses: [] };
+
+    const existing = await this.prisma.user_license.findMany({
+      where: { userId: user.userId, license: { associationId } },
+      include: { license: { select: { id: true, levelOrder: true } } },
+    });
+
+    const existingLicenseIds = existing.map(e => e.licenseId);
+    const maxLevelOrder = existing.length > 0
+      ? Math.max(...existing.map(e => e.license.levelOrder))
+      : 0;
+
+    const available = await this.prisma.license.findMany({
+      where: {
+        associationId,
+        levelOrder: { gt: maxLevelOrder },
+        id: { notIn: existingLicenseIds },
+      },
+      orderBy: { levelOrder: 'asc' },
+    });
+
+    return {
+      licenses: available.map(l => ({
+        licenseId: l.id,
+        code: l.code,
+        name: l.name,
+        nameKo: l.nameKo,
+        levelOrder: l.levelOrder,
+        isInstructor: l.isInstructor,
+      })),
+    };
+  }
+
+  async getAssociationsForLicenses() {
+    const associations = await this.prisma.association.findMany({
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true, name: true },
+    });
+    return { associations };
+  }
+
   private async findPriorityLicenseId(tx: any, participantUserId: string, instructorUserId: string): Promise<number | null> {
     const inProgressLicenses = await tx.user_license.findMany({
       where: {
@@ -688,8 +768,121 @@ export class AllblueService {
     return inProgressLicenses[0].license.id;
   }
 
+  private async processParticipant(
+    tx: any,
+    scheduleId: number,
+    p: any,
+    instructorUserId: string,
+    instructorIntId: number,
+    instructorNickname: string,
+  ) {
+    if (p.guestNickname) {
+      // 게스트 참가자
+      const guest = await tx.guest_user.create({
+        data: { nickname: p.guestNickname.trim(), phone: p.guestPhone?.trim() || null },
+      });
+      await tx.schedule_participant.create({
+        data: { scheduleId, guestId: guest.id, categoryCode: p.categoryCode ?? null },
+      });
+      await tx.form_submission.createMany({
+        data: ['liability', 'medical'].map(formId => ({
+          uuid: randomUUID(),
+          formId,
+          diverName: guest.nickname,
+          instructorId: instructorIntId,
+          instructorName: instructorNickname,
+          scheduleId,
+          participantGuestId: guest.id,
+        })),
+      });
+      return;
+    }
+
+    // 앱 사용자 참가자
+    const user = await tx.user.findUnique({
+      where: { id: p.userId },
+      select: { userId: true, nickname: true, userName: true },
+    });
+    if (!user) return;
+
+    const participant = await tx.schedule_participant.create({
+      data: { scheduleId, userId: user.userId, categoryCode: p.categoryCode ?? null },
+    });
+
+    // newLicenses: 새 자격증 과정 생성
+    const allUserLicenseIds = [...(p.userLicenseIds ?? [])];
+    if (p.newLicenses?.length > 0) {
+      for (const licenseId of p.newLicenses) {
+        const ul = await tx.user_license.create({
+          data: {
+            userId: user.userId,
+            licenseId,
+            status: 'IN_PROGRESS',
+            instructorId: instructorUserId,
+            startedAt: new Date(),
+          },
+        });
+        allUserLicenseIds.push(ul.id);
+      }
+    }
+
+    // schedule_participant_license 연결
+    if (allUserLicenseIds.length > 0) {
+      await tx.schedule_participant_license.createMany({
+        data: allUserLicenseIds.map((ulId: number) => ({
+          scheduleParticipantId: participant.id,
+          userLicenseId: ulId,
+        })),
+      });
+    }
+
+    // form_submission 생성
+    const isCert = p.categoryCode === 'CERTIFICATION';
+    if (isCert) {
+      const licenseId = await this.findPriorityLicenseId(tx, user.userId, instructorUserId);
+      for (const formId of ['liability', 'medical']) {
+        if (licenseId) {
+          const existing = await tx.form_submission.findFirst({
+            where: {
+              participantUserId: user.userId,
+              instructorId: instructorIntId,
+              licenseId,
+              formId,
+              status: 'submitted',
+            },
+          });
+          if (existing) continue;
+        }
+        await tx.form_submission.create({
+          data: {
+            uuid: randomUUID(),
+            formId,
+            diverName: user.nickname ?? user.userName ?? '',
+            instructorId: instructorIntId,
+            instructorName: instructorNickname,
+            scheduleId,
+            participantUserId: user.userId,
+            licenseId: licenseId ?? null,
+          },
+        });
+      }
+    } else {
+      await tx.form_submission.createMany({
+        data: ['liability', 'medical'].map(formId => ({
+          uuid: randomUUID(),
+          formId,
+          diverName: user.nickname ?? user.userName ?? '',
+          instructorId: instructorIntId,
+          instructorName: instructorNickname,
+          scheduleId,
+          participantUserId: user.userId,
+        })),
+      });
+    }
+  }
+
   async createSchedule(body: any, instructorUserId: string) {
-    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds, guests, visibility } = body;
+    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participants, participantIds, guests, visibility } = body;
 
     if (!title?.trim() || title.trim().length > 100) {
       return { success: false, message: '제목을 입력해주세요. (최대 100자)' };
@@ -724,98 +917,27 @@ export class AllblueService {
         select: { id: true, nickname: true },
       });
 
-      if (participantIds?.length > 0) {
-        // user.id(INT) → user.userId(VARCHAR) 변환
-        const users = await tx.user.findMany({
-          where: { id: { in: participantIds } },
-          select: { userId: true, nickname: true, userName: true },
-        });
-
-        await tx.schedule_participant.createMany({
-          data: users.map((u) => ({
-            scheduleId: schedule.id,
-            userId: u.userId,
-          })),
-        });
-
-        // 면책동의서·의료진술서 자동 생성
-        const isCertification = categoryCode === 'CERTIFICATION';
-
-        for (const u of users) {
-          if (isCertification) {
-            const licenseId = await this.findPriorityLicenseId(tx, u.userId, instructorUserId);
-
-            for (const formId of ['liability', 'medical']) {
-              if (licenseId) {
-                const existing = await tx.form_submission.findFirst({
-                  where: {
-                    participantUserId: u.userId,
-                    instructorId: instructor!.id,
-                    licenseId,
-                    formId,
-                    status: 'submitted',
-                  },
-                });
-                if (existing) continue;
-              }
-
-              await tx.form_submission.create({
-                data: {
-                  uuid: randomUUID(),
-                  formId,
-                  diverName: u.nickname ?? u.userName ?? '',
-                  instructorId: instructor!.id,
-                  instructorName: instructor!.nickname,
-                  scheduleId: schedule.id,
-                  participantUserId: u.userId,
-                  licenseId: licenseId ?? null,
-                },
-              });
-            }
-          } else {
-            await tx.form_submission.createMany({
-              data: ['liability', 'medical'].map(formId => ({
-                uuid: randomUUID(),
-                formId,
-                diverName: u.nickname ?? u.userName ?? '',
-                instructorId: instructor!.id,
-                instructorName: instructor!.nickname,
-                scheduleId: schedule.id,
-                participantUserId: u.userId,
-              })),
-            });
+      // 새 participants 배열 처리
+      if (participants?.length > 0) {
+        for (const p of participants) {
+          await this.processParticipant(tx, schedule.id, p, instructorUserId, instructor!.id, instructor!.nickname);
+        }
+      } else {
+        // 하위 호환: 기존 participantIds/guests 방식
+        if (participantIds?.length > 0) {
+          const users = await tx.user.findMany({
+            where: { id: { in: participantIds } },
+            select: { id: true, userId: true, nickname: true, userName: true },
+          });
+          for (const u of users) {
+            await this.processParticipant(tx, schedule.id, { userId: u.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname);
           }
         }
-      }
-
-      if (guests?.length > 0) {
-        for (const g of guests) {
-          if (!g.nickname?.trim()) continue;
-          const guest = await tx.guest_user.create({
-            data: {
-              nickname: g.nickname.trim(),
-              phone: g.phone?.trim() || null,
-            },
-          });
-          await tx.schedule_participant.create({
-            data: {
-              scheduleId: schedule.id,
-              guestId: guest.id,
-            },
-          });
-
-          // 면책동의서·의료진술서 자동 생성
-          await tx.form_submission.createMany({
-            data: ['liability', 'medical'].map(formId => ({
-              uuid: randomUUID(),
-              formId,
-              diverName: guest.nickname,
-              instructorId: instructor!.id,
-              instructorName: instructor!.nickname,
-              scheduleId: schedule.id,
-              participantGuestId: guest.id,
-            })),
-          });
+        if (guests?.length > 0) {
+          for (const g of guests) {
+            if (!g.nickname?.trim()) continue;
+            await this.processParticipant(tx, schedule.id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname);
+          }
         }
       }
 
@@ -1031,6 +1153,13 @@ export class AllblueService {
               },
             },
             guest: { select: { id: true, nickname: true } },
+            licenses: {
+              include: {
+                userLicense: {
+                  include: { license: { select: { code: true, nameKo: true } } },
+                },
+              },
+            },
           },
         },
         formSubmissions: {
@@ -1149,6 +1278,12 @@ export class AllblueService {
             nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
             name: isGuest ? null : (p.user!.userName ?? null),
             isGuest,
+            categoryCode: p.categoryCode ?? null,
+            participantLicenses: (p.licenses ?? []).map((l: any) => ({
+              userLicenseId: l.userLicenseId,
+              code: l.userLicense.license.code,
+              nameKo: l.userLicense.license.nameKo,
+            })),
             waiverSigned: waiver?.status === 'submitted',
             medicalSigned: medical?.status === 'submitted',
             waiverUrl: waiver?.status === 'submitted' ? `${baseUrl}/${waiver.uuid}` : null,
@@ -1196,7 +1331,7 @@ export class AllblueService {
   }
 
   async updateSchedule(id: number, body: any, instructorUserId: string) {
-    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participantIds, guests, visibility } = body;
+    const { title, scheduleDate, startHour, startMinute, poolId, categoryCode, participants, participantIds, guests, visibility } = body;
 
     const schedule = await this.prisma.schedule.findUnique({ where: { id } });
     if (!schedule) {
@@ -1240,99 +1375,69 @@ export class AllblueService {
         select: { id: true, nickname: true },
       });
 
-      // 2. 앱 사용자 참석자 처리 (participantIds가 명시적으로 전달된 경우만)
-      if (participantIds !== undefined && participantIds !== null) {
-        const existingParticipants = await tx.schedule_participant.findMany({
-          where: { scheduleId: id, userId: { not: null } },
-        });
-        const existingUserIds = existingParticipants.map(p => p.userId!);
-
-        const newUsers = participantIds.length > 0
-          ? await tx.user.findMany({
-              where: { id: { in: participantIds } },
-              select: { id: true, userId: true, nickname: true, userName: true },
-            })
-          : [];
-        const newUserIds = newUsers.map(u => u.userId);
-
-        const removedUserIds = existingUserIds.filter(uid => !newUserIds.includes(uid));
-        const addedUserIds = newUserIds.filter(uid => !existingUserIds.includes(uid));
-
-        // 제거된 앱 사용자 처리
-        for (const removedUserId of removedUserIds) {
-          await tx.form_submission.deleteMany({
-            where: { scheduleId: id, participantUserId: removedUserId, status: { not: 'submitted' } },
-          });
-          await tx.form_submission.updateMany({
-            where: { scheduleId: id, participantUserId: removedUserId, status: 'submitted' },
-            data: { scheduleId: null },
-          });
-          await tx.schedule_participant.deleteMany({
-            where: { scheduleId: id, userId: removedUserId },
-          });
+      // 2. participants 배열이 전달된 경우 — 기존 참가자 삭제 후 재생성
+      if (participants !== undefined && participants !== null) {
+        // 기존 참가자 정리 (form_submission은 보존)
+        const existingParts = await tx.schedule_participant.findMany({ where: { scheduleId: id } });
+        for (const ep of existingParts) {
+          if (ep.userId) {
+            await tx.form_submission.deleteMany({
+              where: { scheduleId: id, participantUserId: ep.userId, status: { not: 'submitted' } },
+            });
+            await tx.form_submission.updateMany({
+              where: { scheduleId: id, participantUserId: ep.userId, status: 'submitted' },
+              data: { scheduleId: null },
+            });
+          }
+          if (ep.guestId) {
+            await tx.form_submission.deleteMany({
+              where: { scheduleId: id, participantGuestId: ep.guestId, status: { not: 'submitted' } },
+            });
+            await tx.form_submission.updateMany({
+              where: { scheduleId: id, participantGuestId: ep.guestId, status: 'submitted' },
+              data: { scheduleId: null },
+            });
+          }
         }
+        await tx.schedule_participant.deleteMany({ where: { scheduleId: id } });
 
-        // 추가된 앱 사용자 INSERT
-        for (const addedUserId of addedUserIds) {
-          const user = newUsers.find(u => u.userId === addedUserId)!;
-          await tx.schedule_participant.create({
-            data: { scheduleId: id, userId: addedUserId },
-          });
-          await tx.form_submission.createMany({
-            data: ['liability', 'medical'].map(formId => ({
-              uuid: randomUUID(),
-              formId,
-              diverName: user.nickname ?? user.userName ?? '',
-              instructorId: instructor!.id,
-              instructorName: instructor!.nickname,
-              scheduleId: id,
-              participantUserId: addedUserId,
-            })),
-          });
+        // 새 참가자 생성
+        for (const p of participants) {
+          await this.processParticipant(tx, id, p, instructorUserId, instructor!.id, instructor!.nickname);
         }
-      }
+      } else {
+        // 하위 호환: 기존 participantIds/guests 방식
+        if (participantIds !== undefined && participantIds !== null) {
+          const existingParticipants = await tx.schedule_participant.findMany({
+            where: { scheduleId: id, userId: { not: null } },
+          });
+          const existingUserIds = existingParticipants.map(p => p.userId!);
+          const newUsers = participantIds.length > 0
+            ? await tx.user.findMany({ where: { id: { in: participantIds } }, select: { id: true, userId: true, nickname: true, userName: true } })
+            : [];
+          const newUserIds = newUsers.map(u => u.userId);
 
-      // 3. 게스트 참석자 처리 (guests가 명시적으로 전달된 경우만)
-      if (guests !== undefined && guests !== null) {
-        const existingGuestParticipants = await tx.schedule_participant.findMany({
-          where: { scheduleId: id, guestId: { not: null } },
-        });
-        const existingGuestIds = existingGuestParticipants.map(p => p.guestId!);
-
-        // 기존 게스트 제거
-        for (const guestId of existingGuestIds) {
-          await tx.form_submission.deleteMany({
-            where: { scheduleId: id, participantGuestId: guestId, status: { not: 'submitted' } },
-          });
-          await tx.form_submission.updateMany({
-            where: { scheduleId: id, participantGuestId: guestId, status: 'submitted' },
-            data: { scheduleId: null },
-          });
-          await tx.schedule_participant.deleteMany({
-            where: { scheduleId: id, guestId },
-          });
+          for (const removedUserId of existingUserIds.filter(uid => !newUserIds.includes(uid))) {
+            await tx.form_submission.deleteMany({ where: { scheduleId: id, participantUserId: removedUserId, status: { not: 'submitted' } } });
+            await tx.form_submission.updateMany({ where: { scheduleId: id, participantUserId: removedUserId, status: 'submitted' }, data: { scheduleId: null } });
+            await tx.schedule_participant.deleteMany({ where: { scheduleId: id, userId: removedUserId } });
+          }
+          for (const addedUserId of newUserIds.filter(uid => !existingUserIds.includes(uid))) {
+            const user = newUsers.find(u => u.userId === addedUserId)!;
+            await this.processParticipant(tx, id, { userId: user.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname);
+          }
         }
-
-        // 새 게스트 INSERT
-        for (const g of guests) {
-          if (!g.nickname?.trim()) continue;
-          const guest = await tx.guest_user.create({
-            data: { nickname: g.nickname.trim(), phone: g.phone?.trim() || null },
-          });
-          await tx.schedule_participant.create({
-            data: { scheduleId: id, guestId: guest.id },
-          });
-          await tx.form_submission.createMany({
-            data: ['liability', 'medical'].map(formId => ({
-              uuid: randomUUID(),
-              formId,
-              diverName: guest.nickname,
-              instructorId: instructor!.id,
-              instructorName: instructor!.nickname,
-              scheduleId: id,
-              participantGuestId: guest.id,
-            })),
-          });
+        if (guests !== undefined && guests !== null) {
+          const existingGuestParts = await tx.schedule_participant.findMany({ where: { scheduleId: id, guestId: { not: null } } });
+          for (const ep of existingGuestParts) {
+            await tx.form_submission.deleteMany({ where: { scheduleId: id, participantGuestId: ep.guestId!, status: { not: 'submitted' } } });
+            await tx.form_submission.updateMany({ where: { scheduleId: id, participantGuestId: ep.guestId!, status: 'submitted' }, data: { scheduleId: null } });
+            await tx.schedule_participant.deleteMany({ where: { scheduleId: id, guestId: ep.guestId! } });
+          }
+          for (const g of guests) {
+            if (!g.nickname?.trim()) continue;
+            await this.processParticipant(tx, id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname);
+          }
         }
       }
 

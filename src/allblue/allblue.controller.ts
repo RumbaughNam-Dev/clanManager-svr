@@ -130,6 +130,24 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('user/:userId/in-progress-licenses')
+  getInProgressLicenses(@Param('userId') userId: string, @Req() req: any) {
+    return this.allblueService.getInProgressLicenses(Number(userId), req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('licenses/available')
+  getAvailableLicenses(@Query('userId') userId: string, @Query('associationId') associationId: string) {
+    return this.allblueService.getAvailableLicenses(Number(userId), Number(associationId));
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('licenses/associations')
+  getAssociationsForLicenses() {
+    return this.allblueService.getAssociationsForLicenses();
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Post('schedule')
   createSchedule(@Body() body: any, @Req() req: any) {
     return this.allblueService.createSchedule(body, req.user.userId);
