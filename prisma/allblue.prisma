@@ -47,6 +47,7 @@ model user {
   debriefings             debriefing[]               @relation("debriefing_creator")
   closeFriendOf           close_friend[]             @relation("cf_friend")
   settings                user_setting[]
+  pushTokens              push_token[]
   friendGroups            friend_group[]             @relation("fg_owner")
   friendGroupMemberships  friend_group_member[]      @relation("fgm_member")
 }
@@ -483,6 +484,18 @@ model user_setting {
 
   @@unique([userId, settingKey], map: "uk_user_setting")
   @@map("user_setting")
+}
+
+model push_token {
+  id        Int      @id @default(autoincrement()) @db.UnsignedInt
+  userId    String   @map("user_id") @db.VarChar(50)
+  token     String   @unique @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      user     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_token")
 }
 
 model verification_code {

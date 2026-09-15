@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import jwt, { Secret, SignOptions } from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import { AllblueS3Service } from './allblue-s3.service';
+import { AllbluePushService } from './allblue-push.service';
 import { ASSOCIATION_PRIORITY } from './constants';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -19,6 +20,7 @@ export class AllblueService {
     private prisma: AllbluePrismaService,
     private config: ConfigService,
     private s3: AllblueS3Service,
+    private push: AllbluePushService,
   ) {
     this.jwtSecret = this.config.get<string>('JWT_SECRET', 'dev-allblue-secret');
     this.snsClient = new SNSClient({ region: 'ap-northeast-2' });
@@ -897,7 +899,7 @@ export class AllblueService {
       return { success: false, message: '시간을 올바르게 입력해주세요.' };
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const txResult = await this.prisma.$transaction(async (tx) => {
       const schedule = await tx.schedule.create({
         data: {
           title: title.trim(),
@@ -950,6 +952,36 @@ export class AllblueService {
 
       return { success: true, scheduleId: schedule.id };
     });
+
+    // 푸시 알림 (실패해도 일정 생성 응답에 영향 없음)
+    if (txResult.scheduleId) {
+      try {
+        const parts = await this.prisma.schedule_participant.findMany({
+          where: { scheduleId: txResult.scheduleId, userId: { not: null } },
+          select: { userId: true },
+        });
+        const recipientIds = parts
+          .map(p => p.userId!)
+          .filter(uid => uid !== instructorUserId);
+
+        if (recipientIds.length > 0) {
+          const instructorUser = await this.prisma.user.findUnique({
+            where: { userId: instructorUserId },
+            select: { nickname: true },
+          });
+          this.push.sendPushNotifications(
+            recipientIds,
+            '다이빙 등록',
+            `${instructorUser?.nickname ?? ''}님이 다이빙 일정에 다이버님을 등록했어요.`,
+            { type: 'schedule', scheduleId: txResult.scheduleId },
+          );
+        }
+      } catch (err) {
+        console.error('[Push] 일정 생성 푸시 발송 실패:', err);
+      }
+    }
+
+    return txResult;
   }
 
   async getDailySchedules(date: string, userId: string) {
@@ -2281,6 +2313,32 @@ export class AllblueService {
         status: 'ANSWERED',
         answeredAt: new Date(),
       },
+    });
+
+    return { success: true };
+  }
+
+  async registerPushToken(userId: string, token: string) {
+    if (!token?.trim()) {
+      return { success: false, message: '토큰을 입력해주세요.' };
+    }
+
+    await this.prisma.push_token.upsert({
+      where: { token },
+      create: { userId, token },
+      update: { userId },
+    });
+
+    return { success: true };
+  }
+
+  async unregisterPushToken(userId: string, token: string) {
+    if (!token?.trim()) {
+      return { success: false, message: '토큰을 입력해주세요.' };
+    }
+
+    await this.prisma.push_token.deleteMany({
+      where: { token, userId },
     });
 
     return { success: true };

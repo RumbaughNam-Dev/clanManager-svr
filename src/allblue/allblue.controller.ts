@@ -364,6 +364,18 @@ export class AllblueController {
     return this.allblueService.withdraw(req.user.userId);
   }
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('push/register')
+  registerPushToken(@Body() body: { token: string }, @Req() req: any) {
+    return this.allblueService.registerPushToken(req.user.userId, body.token);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('push/unregister')
+  unregisterPushToken(@Body() body: { token: string }, @Req() req: any) {
+    return this.allblueService.unregisterPushToken(req.user.userId, body.token);
+  }
+
   @Post('auth/send-code')
   sendVerificationCode(@Body() body: { phone: string }) {
     return this.allblueService.sendVerificationCode(body.phone);
