@@ -365,6 +365,43 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('organizations/search')
+  searchOrganizations(@Query('q') q: string) {
+    return this.allblueService.searchOrganizations(q);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('organizations')
+  @UseInterceptors(FileInterceptor('logo', {
+    limits: { fileSize: 10 * 1024 * 1024 },
+  }))
+  createOrganization(
+    @Body() body: { name: string; phone?: string; address?: string },
+    @UploadedFile() logo: Express.Multer.File,
+    @Req() req: any,
+  ) {
+    return this.allblueService.createOrganization(req.user.userId, body, logo);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('organizations/pending')
+  getPendingOrganizations(@Req() req: any) {
+    return this.allblueService.getPendingOrganizations(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('organizations/:id/approve')
+  approveOrganization(@Param('id') id: string, @Req() req: any) {
+    return this.allblueService.approveOrganization(Number(id), req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('organizations/:id/reject')
+  rejectOrganization(@Param('id') id: string, @Body() body: { reason?: string }, @Req() req: any) {
+    return this.allblueService.rejectOrganization(Number(id), req.user.userId, body.reason);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Post('push/register')
   registerPushToken(@Body() body: { token: string }, @Req() req: any) {
     return this.allblueService.registerPushToken(req.user.userId, body.token);

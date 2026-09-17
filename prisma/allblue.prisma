@@ -21,8 +21,9 @@ model user {
   kakaoId      String?         @unique @db.VarChar(50)
   googleId     String?         @unique @db.VarChar(50)
   naverId      String?         @unique @db.VarChar(50)
-  appleId      String?         @unique @db.VarChar(50)
-  profileImage String?         @db.VarChar(500)
+  appleId        String?         @unique @db.VarChar(50)
+  organizationId Int?            @map("organization_id") @db.UnsignedInt
+  profileImage   String?         @db.VarChar(500)
   birthDate    String?         @db.VarChar(20)
   kakaoTalkId  String?         @db.VarChar(50)
   instagramId  String?         @db.VarChar(50)
@@ -48,6 +49,8 @@ model user {
   closeFriendOf           close_friend[]             @relation("cf_friend")
   settings                user_setting[]
   pushTokens              push_token[]
+  organization            organization?              @relation("org_members", fields: [organizationId], references: [id], onDelete: SetNull)
+  ownedOrganizations      organization[]             @relation("org_representative")
   friendGroups            friend_group[]             @relation("fg_owner")
   friendGroupMemberships  friend_group_member[]      @relation("fgm_member")
 }
@@ -484,6 +487,22 @@ model user_setting {
 
   @@unique([userId, settingKey], map: "uk_user_setting")
   @@map("user_setting")
+}
+
+model organization {
+  id               Int      @id @default(autoincrement()) @db.UnsignedInt
+  name             String   @db.VarChar(100)
+  phone            String?  @db.VarChar(30)
+  address          String?  @db.VarChar(255)
+  logo             String?  @db.VarChar(500)
+  status           String   @default("pending") @db.VarChar(10)
+  representativeId String   @map("representative_id") @db.VarChar(50)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  representative   user     @relation("org_representative", fields: [representativeId], references: [userId])
+  members          user[]   @relation("org_members")
+
+  @@map("organization")
 }
 
 model push_token {
