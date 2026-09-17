@@ -465,7 +465,6 @@ export class AllblueService {
 
     const profile = user.profile
       ? {
-          diverLevel: user.profile.diverLevel,
           description: user.profile.description,
           shoesSize: user.profile.shoesSize,
           finSize: user.profile.finSize,
@@ -537,7 +536,7 @@ export class AllblueService {
   }
 
   async updateProfile(userId: number, body: any) {
-    const { diverLevel, description, shoesSize, finSize, sta, dynb, dyn, dnf, fim, cwtb, cwt, cnf } = body;
+    const { description, shoesSize, finSize, sta, dynb, dyn, dnf, fim, cwtb, cwt, cnf } = body;
 
     const userData: any = {};
     if (body.nickname?.trim()) userData.nickname = body.nickname.trim();
@@ -582,7 +581,6 @@ export class AllblueService {
     }
 
     const data: any = {};
-    if (diverLevel !== undefined) data.diverLevel = diverLevel;
     if (description !== undefined) data.description = description;
     if (shoesSize !== undefined) data.shoesSize = shoesSize;
     if (finSize !== undefined) data.finSize = finSize;
@@ -605,7 +603,6 @@ export class AllblueService {
     return {
       success: true,
       profile: {
-        diverLevel: profile.diverLevel,
         description: profile.description,
         shoesSize: profile.shoesSize,
         finSize: profile.finSize,
