@@ -667,6 +667,16 @@ export class AllblueService {
       data: { userId, imageUrl },
     });
 
+    try {
+      this.push.sendPushNotifications({
+        title: '자격증 등록',
+        body: '자격증 등록 요청이 들어왔어요. 자격증 등록처리해 주세요.',
+        levels: ['A'],
+      });
+    } catch (err) {
+      console.error('[Push] 자격증 등록 푸시 실패:', err);
+    }
+
     return { success: true };
   }
 
@@ -2232,6 +2242,16 @@ export class AllblueService {
           mimeType: file.mimetype,
         },
       });
+    }
+
+    try {
+      this.push.sendPushNotifications({
+        title: '문의 등록',
+        body: '문의가 등록되었습니다. 답변처리해 주세요.',
+        levels: ['A'],
+      });
+    } catch (err) {
+      console.error('[Push] 문의 등록 푸시 실패:', err);
     }
 
     return { success: true };
