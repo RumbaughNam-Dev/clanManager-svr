@@ -562,11 +562,11 @@ export class AllblueService {
             userData.organizationStatus = 'pending';
             // 대표자에게 푸시
             try {
-              this.push.sendPushNotifications(
-                [org.representativeId],
-                '단체 등록요청',
-                `${currentUser.nickname}님이 ${org.name}에 소속 등록요청 했어요. 프로필 화면에서 확인해주세요.`,
-              );
+              this.push.sendPushNotifications({
+                title: '단체 등록요청',
+                body: `${currentUser.nickname}님이 ${org.name}에 소속 등록요청 했어요. 프로필 화면에서 확인해주세요.`,
+                userIds: [org.representativeId],
+              });
             } catch (err) {
               console.error('[Push] 소속 등록요청 푸시 실패:', err);
             }
@@ -1015,12 +1015,12 @@ export class AllblueService {
             where: { userId: instructorUserId },
             select: { nickname: true },
           });
-          this.push.sendPushNotifications(
-            recipientIds,
-            '다이빙 등록',
-            `${instructorUser?.nickname ?? ''}님이 다이빙 일정에 다이버님을 등록했어요.`,
-            { type: 'schedule', scheduleId: txResult.scheduleId },
-          );
+          this.push.sendPushNotifications({
+            title: '다이빙 등록',
+            body: `${instructorUser?.nickname ?? ''}님이 다이빙 일정에 다이버님을 등록했어요.`,
+            userIds: recipientIds,
+            data: { type: 'schedule', scheduleId: txResult.scheduleId },
+          });
         }
       } catch (err) {
         console.error('[Push] 일정 생성 푸시 발송 실패:', err);
@@ -2416,18 +2416,11 @@ export class AllblueService {
 
     // admin 유저에게 푸시
     try {
-      const admins = await this.prisma.user_profile.findMany({
-        where: { level: 'A' },
-        select: { user: { select: { userId: true } } },
+      this.push.sendPushNotifications({
+        title: '단체등록요청',
+        body: `단체 등록요청이 접수되었어요. (${org.name})`,
+        levels: ['A'],
       });
-      const adminIds = admins.map(a => a.user.userId);
-      if (adminIds.length > 0) {
-        this.push.sendPushNotifications(
-          adminIds,
-          '단체등록요청',
-          `단체 등록요청이 접수되었어요. (${org.name})`,
-        );
-      }
     } catch (err) {
       console.error('[Push] 단체등록 푸시 실패:', err);
     }
@@ -2475,11 +2468,11 @@ export class AllblueService {
     });
 
     try {
-      this.push.sendPushNotifications(
-        [org.representativeId],
-        '단체등록',
-        `단체 등록이 승인되었어요. (${org.name})`,
-      );
+      this.push.sendPushNotifications({
+        title: '단체등록',
+        body: `단체 등록이 승인되었어요. (${org.name})`,
+        userIds: [org.representativeId],
+      });
     } catch (err) {
       console.error('[Push] 단체승인 푸시 실패:', err);
     }
@@ -2506,11 +2499,11 @@ export class AllblueService {
     });
 
     try {
-      this.push.sendPushNotifications(
-        [org.representativeId],
-        '단체등록',
-        `단체 등록이 반려되었어요. (${org.name})`,
-      );
+      this.push.sendPushNotifications({
+        title: '단체등록',
+        body: `단체 등록이 반려되었어요. (${org.name})`,
+        userIds: [org.representativeId],
+      });
     } catch (err) {
       console.error('[Push] 단체반려 푸시 실패:', err);
     }
@@ -2557,11 +2550,11 @@ export class AllblueService {
     });
 
     try {
-      this.push.sendPushNotifications(
-        [memberUserId],
-        '소속 등록',
-        `${org.name} 소속 등록이 승인되었어요.`,
-      );
+      this.push.sendPushNotifications({
+        title: '소속 승인',
+        body: `${org.name} 소속 등록요청이 승인되었어요.`,
+        userIds: [memberUserId],
+      });
     } catch (err) {
       console.error('[Push] 소속 승인 푸시 실패:', err);
     }
@@ -2586,11 +2579,11 @@ export class AllblueService {
     });
 
     try {
-      this.push.sendPushNotifications(
-        [memberUserId],
-        '소속 등록',
-        `${org.name} 소속 등록이 반려되었어요.`,
-      );
+      this.push.sendPushNotifications({
+        title: '소속 반려',
+        body: `${org.name} 소속 등록요청이 반려되었어요.`,
+        userIds: [memberUserId],
+      });
     } catch (err) {
       console.error('[Push] 소속 반려 푸시 실패:', err);
     }
