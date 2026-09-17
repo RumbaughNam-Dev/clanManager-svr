@@ -407,6 +407,24 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Get('organizations/members/pending')
+  getPendingMembers(@Req() req: any) {
+    return this.allblueService.getPendingMembers(req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('organizations/members/:userId/approve')
+  approveMember(@Param('userId') userId: string, @Req() req: any) {
+    return this.allblueService.approveMember(userId, req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('organizations/members/:userId/reject')
+  rejectMember(@Param('userId') userId: string, @Req() req: any) {
+    return this.allblueService.rejectMember(userId, req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Post('push/register')
   registerPushToken(@Body() body: { token: string }, @Req() req: any) {
     return this.allblueService.registerPushToken(req.user.userId, body.token);

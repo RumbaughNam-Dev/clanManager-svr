@@ -22,8 +22,9 @@ model user {
   googleId     String?         @unique @db.VarChar(50)
   naverId      String?         @unique @db.VarChar(50)
   appleId        String?         @unique @db.VarChar(50)
-  organizationId Int?            @map("organization_id") @db.UnsignedInt
-  profileImage   String?         @db.VarChar(500)
+  organizationId     Int?            @map("organization_id") @db.UnsignedInt
+  organizationStatus String?         @map("organization_status") @db.VarChar(10)
+  profileImage       String?         @db.VarChar(500)
   birthDate    String?         @db.VarChar(20)
   kakaoTalkId  String?         @db.VarChar(50)
   instagramId  String?         @db.VarChar(50)

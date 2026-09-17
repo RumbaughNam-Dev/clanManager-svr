@@ -454,7 +454,8 @@ export class AllblueService {
       where: { id: userId },
       select: {
         id: true, nickname: true, userName: true, profileImage: true, profile: true,
-        organization: { select: { id: true, name: true, logo: true, status: true } },
+        userId: true, organizationStatus: true,
+        organization: { select: { id: true, name: true, logo: true, status: true, representativeId: true } },
       },
     });
 
@@ -487,7 +488,14 @@ export class AllblueService {
         name: user.userName ?? null,
         profileImage: user.profileImage,
         organization: user.organization && user.organization.status !== 'rejected'
-          ? { id: user.organization.id, name: user.organization.name, logo: user.organization.logo, status: user.organization.status }
+          ? {
+              id: user.organization.id,
+              name: user.organization.name,
+              logo: user.organization.logo,
+              status: user.organization.status,
+              membershipStatus: user.organizationStatus ?? null,
+              isRepresentative: user.organization.representativeId === user.userId,
+            }
           : null,
       },
       profile,
@@ -534,7 +542,38 @@ export class AllblueService {
     const userData: any = {};
     if (body.nickname?.trim()) userData.nickname = body.nickname.trim();
     if (body.name !== undefined) userData.userName = body.name?.trim() || null;
-    if (body.organizationId !== undefined) userData.organizationId = body.organizationId;
+    if (body.organizationId !== undefined) {
+      userData.organizationId = body.organizationId;
+      if (body.organizationId === null) {
+        userData.organizationStatus = null;
+      } else {
+        const org = await this.prisma.organization.findUnique({
+          where: { id: body.organizationId },
+          select: { representativeId: true, name: true },
+        });
+        const currentUser = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { userId: true, nickname: true },
+        });
+        if (org && currentUser) {
+          if (org.representativeId === currentUser.userId) {
+            userData.organizationStatus = 'approved';
+          } else {
+            userData.organizationStatus = 'pending';
+            // 대표자에게 푸시
+            try {
+              this.push.sendPushNotifications(
+                [org.representativeId],
+                '단체 등록요청',
+                `${currentUser.nickname}님이 ${org.name}에 소속 등록요청 했어요. 프로필 화면에서 확인해주세요.`,
+              );
+            } catch (err) {
+              console.error('[Push] 소속 등록요청 푸시 실패:', err);
+            }
+          }
+        }
+      }
+    }
     if (Object.keys(userData).length > 0) {
       await this.prisma.user.update({
         where: { id: userId },
@@ -2372,7 +2411,7 @@ export class AllblueService {
 
     await this.prisma.user.update({
       where: { userId },
-      data: { organizationId: org.id },
+      data: { organizationId: org.id, organizationStatus: 'approved' },
     });
 
     // admin 유저에게 푸시
@@ -2463,7 +2502,7 @@ export class AllblueService {
 
     await this.prisma.user.updateMany({
       where: { organizationId: id },
-      data: { organizationId: null },
+      data: { organizationId: null, organizationStatus: null },
     });
 
     try {
@@ -2474,6 +2513,86 @@ export class AllblueService {
       );
     } catch (err) {
       console.error('[Push] 단체반려 푸시 실패:', err);
+    }
+
+    return { success: true };
+  }
+
+  async getPendingMembers(userId: string) {
+    const org = await this.prisma.organization.findFirst({
+      where: { representativeId: userId },
+    });
+    if (!org) return { success: false, message: '대표자로 등록된 단체가 없습니다.' };
+
+    const members = await this.prisma.user.findMany({
+      where: { organizationId: org.id, organizationStatus: 'pending' },
+      select: { userId: true, nickname: true, userName: true, phone: true, profileImage: true },
+    });
+
+    return {
+      members: members.map(m => ({
+        userId: m.userId,
+        nickname: m.nickname,
+        name: m.userName ?? null,
+        phone: m.phone ?? null,
+        profileImage: m.profileImage ?? null,
+      })),
+    };
+  }
+
+  async approveMember(memberUserId: string, representativeUserId: string) {
+    const org = await this.prisma.organization.findFirst({
+      where: { representativeId: representativeUserId },
+    });
+    if (!org) return { success: false, message: '대표자 권한이 없습니다.' };
+
+    const member = await this.prisma.user.findUnique({ where: { userId: memberUserId } });
+    if (!member || member.organizationId !== org.id || member.organizationStatus !== 'pending') {
+      return { success: false, message: '승인할 수 없는 요청입니다.' };
+    }
+
+    await this.prisma.user.update({
+      where: { userId: memberUserId },
+      data: { organizationStatus: 'approved' },
+    });
+
+    try {
+      this.push.sendPushNotifications(
+        [memberUserId],
+        '소속 등록',
+        `${org.name} 소속 등록이 승인되었어요.`,
+      );
+    } catch (err) {
+      console.error('[Push] 소속 승인 푸시 실패:', err);
+    }
+
+    return { success: true };
+  }
+
+  async rejectMember(memberUserId: string, representativeUserId: string) {
+    const org = await this.prisma.organization.findFirst({
+      where: { representativeId: representativeUserId },
+    });
+    if (!org) return { success: false, message: '대표자 권한이 없습니다.' };
+
+    const member = await this.prisma.user.findUnique({ where: { userId: memberUserId } });
+    if (!member || member.organizationId !== org.id) {
+      return { success: false, message: '반려할 수 없는 요청입니다.' };
+    }
+
+    await this.prisma.user.update({
+      where: { userId: memberUserId },
+      data: { organizationId: null, organizationStatus: null },
+    });
+
+    try {
+      this.push.sendPushNotifications(
+        [memberUserId],
+        '소속 등록',
+        `${org.name} 소속 등록이 반려되었어요.`,
+      );
+    } catch (err) {
+      console.error('[Push] 소속 반려 푸시 실패:', err);
     }
 
     return { success: true };
