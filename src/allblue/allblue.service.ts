@@ -2337,17 +2337,28 @@ export class AllblueService {
     return { organizations };
   }
 
-  async createOrganization(userId: string, body: { name: string; phone?: string; address?: string }, logo?: Express.Multer.File) {
+  async uploadOrganizationLogo(file: Express.Multer.File) {
+    if (!file) {
+      return { success: false, message: '로고 이미지를 첨부해주세요.' };
+    }
+
+    const ext = file.originalname.split('.').pop() ?? 'jpg';
+    const key = `allblue/organizations/${Date.now()}.${ext}`;
+    const logoUrl = await this.s3.uploadFile(file.buffer, key, file.mimetype);
+
+    if (!logoUrl) {
+      return { success: false, message: 'S3 업로드에 실패했습니다.' };
+    }
+
+    return { logoUrl };
+  }
+
+  async createOrganization(userId: string, body: { name: string; phone?: string; address?: string; logo?: string }) {
     if (!body.name?.trim()) {
       return { success: false, message: '단체명을 입력해주세요.' };
     }
 
-    let logoUrl: string | null = null;
-    if (logo) {
-      const ext = logo.originalname.split('.').pop() ?? 'jpg';
-      const key = `allblue/organizations/${Date.now()}.${ext}`;
-      logoUrl = await this.s3.uploadFile(logo.buffer, key, logo.mimetype);
-    }
+    const logoUrl = body.logo?.trim() || null;
 
     const org = await this.prisma.organization.create({
       data: {

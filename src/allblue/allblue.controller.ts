@@ -371,16 +371,21 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
-  @Post('organizations')
+  @Post('organizations/logo')
   @UseInterceptors(FileInterceptor('logo', {
     limits: { fileSize: 10 * 1024 * 1024 },
   }))
+  uploadOrganizationLogo(@UploadedFile() logo: Express.Multer.File) {
+    return this.allblueService.uploadOrganizationLogo(logo);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('organizations')
   createOrganization(
-    @Body() body: { name: string; phone?: string; address?: string },
-    @UploadedFile() logo: Express.Multer.File,
+    @Body() body: { name: string; phone?: string; address?: string; logo?: string },
     @Req() req: any,
   ) {
-    return this.allblueService.createOrganization(req.user.userId, body, logo);
+    return this.allblueService.createOrganization(req.user.userId, body);
   }
 
   @UseGuards(AllblueJwtAuthGuard)
