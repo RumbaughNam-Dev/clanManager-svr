@@ -519,7 +519,7 @@ export class AllblueService {
       select: { profile: { select: { level: true } } },
     });
     const level = currentUser?.profile?.level;
-    if (level === '5' || level === 'A') {
+    if (level === '5' || level?.toUpperCase() === 'A') {
       const count = await this.prisma.schedule_participant.count({
         where: {
           userId,
@@ -1105,8 +1105,19 @@ export class AllblueService {
     let whereFilter: any;
 
     if (filter === 'instructor') {
+      const buddies = await this.prisma.dive_buddy.findMany({
+        where: { userId },
+        select: { buddyId: true },
+      });
+      const buddyIds = buddies.map(b => b.buddyId);
+
+      if (buddyIds.length === 0) {
+        return { schedules: [] };
+      }
+
       whereFilter = {
         visibility: 'public',
+        instructorId: { in: buddyIds },
         instructor: { profile: { level: { in: ['5', 'I'] } } },
       };
     } else if (filter === 'closeFriend') {
@@ -1638,7 +1649,7 @@ export class AllblueService {
         select: { profile: { select: { level: true } } },
       });
       const level = currentUser?.profile?.level;
-      if (!level || !['5', 'A'].includes(level)) {
+      if (!level || !['5', 'A'].includes(level.toUpperCase())) {
         return { success: false, message: '강사만 통과처리할 수 있습니다.' };
       }
 
@@ -2313,7 +2324,7 @@ export class AllblueService {
       where: { userId },
       select: { profile: { select: { level: true } } },
     });
-    return user?.profile?.level === 'A';
+    return user?.profile?.level?.toUpperCase() === 'A';
   }
 
   async getInquiryPendingCount(userId: string) {
