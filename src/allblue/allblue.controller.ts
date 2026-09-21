@@ -167,8 +167,8 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Get('schedule/:id')
-  getScheduleDetail(@Param('id') id: string, @Req() req: any) {
-    return this.allblueService.getScheduleDetail(Number(id), req.user.userId);
+  getScheduleDetail(@Param('id') id: string, @Req() req: any, @Query('filter') filter?: string) {
+    return this.allblueService.getScheduleDetail(Number(id), req.user.userId, filter);
   }
 
   @UseGuards(AllblueJwtAuthGuard)

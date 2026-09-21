@@ -1091,17 +1091,7 @@ export class AllblueService {
     };
   }
 
-  async getMonthlySchedules(yearStr: string, monthStr: string, userId: string, filter?: string) {
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-
-    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
-      return { success: false, message: 'year, month 파라미터를 올바르게 입력해주세요.' };
-    }
-
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 1);
-
+  private async getScheduleScope(userId: string, filter?: string): Promise<{ whereFilter?: any; result?: any }> {
     let whereFilter: any;
 
     if (filter === 'instructor') {
@@ -1112,7 +1102,7 @@ export class AllblueService {
       const buddyIds = buddies.map(b => b.buddyId);
 
       if (buddyIds.length === 0) {
-        return { schedules: [] };
+        return { result: { schedules: [] } };
       }
 
       whereFilter = {
@@ -1128,7 +1118,7 @@ export class AllblueService {
       const friendIds = closeFriends.map(f => f.friendId);
 
       if (friendIds.length === 0) {
-        return { schedules: [] };
+        return { result: { schedules: [] } };
       }
 
       whereFilter = {
@@ -1140,12 +1130,12 @@ export class AllblueService {
     } else if (filter?.startsWith('group_')) {
       const groupId = Number(filter.split('_')[1]);
       if (!groupId || isNaN(groupId)) {
-        return { success: false, message: '유효하지 않은 그룹 ID입니다.' };
+        return { result: { success: false, message: '유효하지 않은 그룹 ID입니다.' } };
       }
 
       const group = await this.prisma.friend_group.findUnique({ where: { id: groupId } });
-      if (!group) return { success: false, message: '존재하지 않는 그룹입니다.' };
-      if (group.userId !== userId) return { success: false, message: '조회 권한이 없습니다.' };
+      if (!group) return { result: { success: false, message: '존재하지 않는 그룹입니다.' } };
+      if (group.userId !== userId) return { result: { success: false, message: '조회 권한이 없습니다.' } };
 
       const members = await this.prisma.friend_group_member.findMany({
         where: { groupId },
@@ -1154,7 +1144,7 @@ export class AllblueService {
       const memberIds = members.map(m => m.userId);
 
       if (memberIds.length === 0) {
-        return { schedules: [] };
+        return { result: { schedules: [] } };
       }
 
       whereFilter = {
@@ -1172,6 +1162,24 @@ export class AllblueService {
         ],
       };
     }
+
+    return { whereFilter };
+  }
+
+  async getMonthlySchedules(yearStr: string, monthStr: string, userId: string, filter?: string) {
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      return { success: false, message: 'year, month 파라미터를 올바르게 입력해주세요.' };
+    }
+
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1);
+
+    const scope = await this.getScheduleScope(userId, filter);
+    if (scope.result) return scope.result;
+    const whereFilter = scope.whereFilter;
 
     const schedules = await this.prisma.schedule.findMany({
       where: {
@@ -1229,7 +1237,7 @@ export class AllblueService {
     };
   }
 
-  async getScheduleDetail(id: number, userId: string) {
+  async getScheduleDetail(id: number, userId: string, filter?: string) {
     if (!id || isNaN(id)) {
       return { success: false, message: '유효하지 않은 일정 ID입니다.' };
     }
@@ -1273,7 +1281,14 @@ export class AllblueService {
     const myParticipant = schedule.participants.find(p => p.userId === userId);
     const isParticipant = !!myParticipant;
     if (!isOwner && !isParticipant) {
-      return { success: false, statusCode: 403, message: '조회 권한이 없습니다.' };
+      const scope = await this.getScheduleScope(userId, filter);
+      const accessible = !scope.result && await this.prisma.schedule.findFirst({
+        where: { id, ...scope.whereFilter },
+        select: { id: true },
+      });
+      if (!accessible) {
+        return { success: false, statusCode: 403, message: '조회 권한이 없습니다.' };
+      }
     }
 
     // categoryName 조회
@@ -1308,6 +1323,19 @@ export class AllblueService {
         instructorName: schedule.instructor.nickname,
         participants: await Promise.all(schedule.participants.map(async p => {
           const isGuest = !p.user;
+          if (!isOwner && (isGuest || p.userId !== userId)) {
+            return {
+              id: isGuest ? p.guest!.id : p.user!.id,
+              nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
+              name: isGuest ? null : (p.user!.userName ?? null),
+              isGuest, categoryCode: p.categoryCode ?? null,
+              level: isGuest ? '0' : (p.user!.profile?.level ?? '0'),
+              participantLicenses: [], hasInProgressLicense: false, debriefingDone: false,
+              waiverSigned: false, medicalSigned: false,
+              waiverUrl: null, medicalUrl: null, waiverUuid: null, medicalUuid: null,
+              waiverReused: false, medicalReused: false,
+            };
+          }
           let waiver = schedule.formSubmissions.find(f =>
             f.formId === 'liability' &&
             (isGuest ? f.participantGuestId === p.guestId : f.participantUserId === p.userId),
