@@ -802,25 +802,26 @@ export class AllblueService {
     return { associations };
   }
 
-  private async findPriorityLicenseId(tx: any, participantUserId: string, instructorUserId: string): Promise<number | null> {
-    const inProgressLicenses = await tx.user_license.findMany({
+  private async findPriorityLicenseId(tx: any, participantUserId: string, instructorUserId: string, userLicenseIds: number[]): Promise<number | null> {
+    if (userLicenseIds.length === 0) return null;
+    const selectedLicenses = await tx.user_license.findMany({
       where: {
         userId: participantUserId,
         instructorId: instructorUserId,
-        status: 'IN_PROGRESS',
+        id: { in: userLicenseIds },
       },
       include: { license: { select: { id: true, associationId: true } } },
     });
 
-    if (inProgressLicenses.length === 0) return null;
+    if (selectedLicenses.length === 0) return null;
 
-    inProgressLicenses.sort((a: any, b: any) => {
+    selectedLicenses.sort((a: any, b: any) => {
       const aIdx = ASSOCIATION_PRIORITY.indexOf(a.license.associationId);
       const bIdx = ASSOCIATION_PRIORITY.indexOf(b.license.associationId);
-      return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+      return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx) || a.license.id - b.license.id;
     });
 
-    return inProgressLicenses[0].license.id;
+    return selectedLicenses[0].license.id;
   }
 
   private async processParticipant(
@@ -830,6 +831,7 @@ export class AllblueService {
     instructorUserId: string,
     instructorIntId: number,
     instructorNickname: string,
+    scheduleCategoryCode: string,
   ) {
     if (p.guestNickname) {
       // 게스트 참가자
@@ -892,9 +894,9 @@ export class AllblueService {
     }
 
     // form_submission 생성
-    const isCert = p.categoryCode === 'CERTIFICATION';
+    const isCert = scheduleCategoryCode === 'CERTIFICATION';
     if (isCert) {
-      const licenseId = await this.findPriorityLicenseId(tx, user.userId, instructorUserId);
+      const licenseId = await this.findPriorityLicenseId(tx, user.userId, instructorUserId, allUserLicenseIds);
       for (const formId of ['liability', 'medical']) {
         if (licenseId) {
           const existing = await tx.form_submission.findFirst({
@@ -975,7 +977,7 @@ export class AllblueService {
       // 새 participants 배열 처리
       if (participants?.length > 0) {
         for (const p of participants) {
-          await this.processParticipant(tx, schedule.id, p, instructorUserId, instructor!.id, instructor!.nickname);
+          await this.processParticipant(tx, schedule.id, p, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
         }
       } else {
         // 하위 호환: 기존 participantIds/guests 방식
@@ -985,13 +987,13 @@ export class AllblueService {
             select: { id: true, userId: true, nickname: true, userName: true },
           });
           for (const u of users) {
-            await this.processParticipant(tx, schedule.id, { userId: u.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname);
+            await this.processParticipant(tx, schedule.id, { userId: u.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
           }
         }
         if (guests?.length > 0) {
           for (const g of guests) {
             if (!g.nickname?.trim()) continue;
-            await this.processParticipant(tx, schedule.id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname);
+            await this.processParticipant(tx, schedule.id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
           }
         }
       }
@@ -1356,10 +1358,10 @@ export class AllblueService {
             }))?.id;
 
             if (instructorIntId) {
-              const licenseId = await this.findPriorityLicenseId(this.prisma, p.userId!, schedule.instructorId);
+              const licenseId = await this.findPriorityLicenseId(this.prisma, p.userId!, schedule.instructorId, p.licenses.map(l => l.userLicenseId));
 
               if (licenseId) {
-                if (!waiver) {
+                if (waiver?.status !== 'submitted') {
                   const reusedWaiver = await this.prisma.form_submission.findFirst({
                     where: {
                       participantUserId: p.userId,
@@ -1375,7 +1377,7 @@ export class AllblueService {
                     waiverReused = true;
                   }
                 }
-                if (!medical) {
+                if (medical?.status !== 'submitted') {
                   const reusedMedical = await this.prisma.form_submission.findFirst({
                     where: {
                       participantUserId: p.userId,
@@ -1527,7 +1529,7 @@ export class AllblueService {
 
         // 새 참가자 생성
         for (const p of participants) {
-          await this.processParticipant(tx, id, p, instructorUserId, instructor!.id, instructor!.nickname);
+          await this.processParticipant(tx, id, p, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
         }
       } else {
         // 하위 호환: 기존 participantIds/guests 방식
@@ -1548,7 +1550,7 @@ export class AllblueService {
           }
           for (const addedUserId of newUserIds.filter(uid => !existingUserIds.includes(uid))) {
             const user = newUsers.find(u => u.userId === addedUserId)!;
-            await this.processParticipant(tx, id, { userId: user.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname);
+            await this.processParticipant(tx, id, { userId: user.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
           }
         }
         if (guests !== undefined && guests !== null) {
@@ -1560,7 +1562,7 @@ export class AllblueService {
           }
           for (const g of guests) {
             if (!g.nickname?.trim()) continue;
-            await this.processParticipant(tx, id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname);
+            await this.processParticipant(tx, id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
           }
         }
       }
