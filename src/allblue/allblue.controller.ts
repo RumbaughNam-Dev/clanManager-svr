@@ -131,8 +131,8 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Get('user/:userId/in-progress-licenses')
-  getInProgressLicenses(@Param('userId') userId: string, @Req() req: any) {
-    return this.allblueService.getInProgressLicenses(Number(userId), req.user.userId);
+  getInProgressLicenses(@Param('userId') userId: string) {
+    return this.allblueService.getInProgressLicenses(Number(userId));
   }
 
   @UseGuards(AllblueJwtAuthGuard)

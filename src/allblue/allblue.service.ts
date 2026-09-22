@@ -722,7 +722,7 @@ export class AllblueService {
     };
   }
 
-  async getInProgressLicenses(userIntId: number, instructorUserId: string) {
+  async getInProgressLicenses(userIntId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userIntId },
       select: { userId: true },
@@ -732,7 +732,6 @@ export class AllblueService {
     const licenses = await this.prisma.user_license.findMany({
       where: {
         userId: user.userId,
-        instructorId: instructorUserId,
         status: 'IN_PROGRESS',
       },
       include: {
@@ -802,12 +801,11 @@ export class AllblueService {
     return { associations };
   }
 
-  private async findPriorityLicenseId(tx: any, participantUserId: string, instructorUserId: string, userLicenseIds: number[]): Promise<number | null> {
+  private async findPriorityLicenseId(tx: any, participantUserId: string, userLicenseIds: number[]): Promise<number | null> {
     if (userLicenseIds.length === 0) return null;
     const selectedLicenses = await tx.user_license.findMany({
       where: {
         userId: participantUserId,
-        instructorId: instructorUserId,
         id: { in: userLicenseIds },
       },
       include: { license: { select: { id: true, associationId: true } } },
@@ -896,7 +894,7 @@ export class AllblueService {
     // form_submission 생성
     const isCert = scheduleCategoryCode === 'CERTIFICATION';
     if (isCert) {
-      const licenseId = await this.findPriorityLicenseId(tx, user.userId, instructorUserId, allUserLicenseIds);
+      const licenseId = await this.findPriorityLicenseId(tx, user.userId, allUserLicenseIds);
       for (const formId of ['liability', 'medical']) {
         if (licenseId) {
           const existing = await tx.form_submission.findFirst({
@@ -1358,7 +1356,7 @@ export class AllblueService {
             }))?.id;
 
             if (instructorIntId) {
-              const licenseId = await this.findPriorityLicenseId(this.prisma, p.userId!, schedule.instructorId, p.licenses.map(l => l.userLicenseId));
+              const licenseId = await this.findPriorityLicenseId(this.prisma, p.userId!, p.licenses.map(l => l.userLicenseId));
 
               if (licenseId) {
                 if (waiver?.status !== 'submitted') {
