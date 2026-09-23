@@ -219,6 +219,9 @@ model schedule_participant {
   scheduleId   Int         @map("schedule_id") @db.UnsignedInt
   userId       String?     @map("user_id") @db.VarChar(50)
   guestId      Int?        @map("guest_id")
+  invitationStatus String @default("accepted") @map("invitation_status") @db.VarChar(20)
+  invitationToken String? @map("invitation_token") @db.VarChar(36)
+  respondedAt DateTime? @map("responded_at")
   categoryCode String?     @map("category_code") @db.VarChar(30)
   createdAt    DateTime    @default(now()) @map("created_at")
   schedule     schedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
@@ -525,4 +528,19 @@ model verification_code {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([phone])
+}
+
+// Retained independently of schedules and accounts for notification history.
+model app_notification {
+  id Int @id @default(autoincrement())
+  senderId String @map("sender_id") @db.VarChar(50)
+  receiverId String @map("receiver_id") @db.VarChar(50)
+  scheduleId Int @map("schedule_id") @db.UnsignedInt
+  invitationToken String @unique @map("invitation_token") @db.VarChar(36)
+  title String @db.VarChar(100)
+  body String @db.VarChar(500)
+  readAt DateTime? @map("read_at")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([receiverId, deletedAt, readAt, id], map: "idx_notification_inbox")
 }

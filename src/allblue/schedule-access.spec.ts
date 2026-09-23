@@ -10,8 +10,8 @@ function fixture() {
   };
   const prisma = {
     schedule: { findUnique: jest.fn().mockResolvedValue(schedule), findFirst: jest.fn().mockResolvedValue({ id: 12 }) },
-    dive_buddy: { findMany: jest.fn().mockResolvedValue([{ buddyId: 'owner' }]) },
-    close_friend: { findMany: jest.fn().mockResolvedValue([{ friendId: 'other' }]) },
+    schedule_participant: { findMany: jest.fn().mockResolvedValue([{ schedule: { instructorId: 'owner' } }]) },
+    close_friend: { findMany: jest.fn().mockResolvedValue([{ friendId: 'other', userId: 'other' }]) },
     friend_group: { findUnique: jest.fn().mockResolvedValue({ userId: 'viewer' }) },
     friend_group_member: { findMany: jest.fn().mockResolvedValue([{ userId: 'owner' }]) },
     common_code: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -35,9 +35,12 @@ it.each(['instructor', 'closeFriend', 'group_7'])('allows a schedule visible thr
     expect(where.visibility).toBe('public');
     expect(where.instructorId).toEqual({ in: ['owner'] });
     expect(where.instructor.profile.level.in).toContain('5');
+  } else if (filter === 'closeFriend') {
+    expect(where.OR[1].participants.some.userId.in).toEqual(['other']);
+    expect(where.OR[1].participants.some.invitationStatus).toBe('accepted');
   } else {
-    expect(where.OR[1].participants.some.userId.in).toEqual([filter === 'closeFriend' ? 'other' : 'owner']);
-    if (filter === 'group_7') expect(where.visibility).toBe('public');
+    expect(where.visibility).toBe('public');
+    expect(where.instructorId.in).toEqual(['owner']);
   }
 });
 

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AllbluePrismaService } from '../allblue-prisma.service';
 import * as bcrypt from 'bcrypt';
@@ -722,6 +722,107 @@ export class AllblueService {
     };
   }
 
+  private async requireTeachingAccess(userId: string, categories: string[]) {
+    if (!categories.some(code => ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'].includes(code))) return;
+    const user = await this.prisma.user.findUnique({ where: { userId }, select: { profile: { select: { level: true } } } });
+    const profile = user?.profile;
+    if (!['5', 'A'].includes(String(profile?.level).toUpperCase())) {
+      throw new ForbiddenException('체험교육, 자격증 과정, 특강은 강사만 등록할 수 있습니다.');
+    }
+  }
+
+  private async queueScheduleInvitation(tx: any, scheduleId: number, senderId: string, receiverId: string, token: string) {
+    const schedule = await tx.schedule.findUnique({ where: { id: scheduleId }, select: { title: true } });
+    const sender = await tx.user.findUnique({ where: { userId: senderId }, select: { nickname: true } });
+    return tx.app_notification.create({ data: {
+      senderId, receiverId, scheduleId, invitationToken: token,
+      title: '일정등록 요청', body: `${sender?.nickname ?? '다이버'}님이 ${schedule.title} 일정에 초대했어요.`,
+    } });
+  }
+
+  private async sendScheduleNotifications(ids: number[]) {
+    if (!ids.length) return;
+    try {
+      const notifications = await this.prisma.app_notification.findMany({ where: { id: { in: ids } } });
+      await Promise.all(notifications.map(n => this.push.sendPushNotifications({
+        userIds: [n.receiverId], title: n.title, body: n.body,
+        data: { type: 'schedule', scheduleId: n.scheduleId, notificationId: n.id },
+      })));
+    } catch (error) { console.error('[Push] Schedule invitation delivery failed', error); }
+  }
+
+  async listNotifications(userId: string, query: { all?: string; before?: string; after?: string; ceiling?: string }) {
+    const parseId = (value?: string) => {
+      if (value === undefined) return undefined;
+      const id = Number(value);
+      if (!Number.isSafeInteger(id) || id < 1) throw new BadRequestException('잘못된 알림 커서입니다.');
+      return id;
+    };
+    const before = parseId(query.before), after = parseId(query.after), ceiling = parseId(query.ceiling);
+    if (before && after) throw new BadRequestException('커서는 하나만 지정해주세요.');
+    const scope = { receiverId: userId, deletedAt: null, ...(query.all === 'true' ? {} : { readAt: null }) };
+    const rows = await this.prisma.app_notification.findMany({
+      where: { ...scope, id: { ...(before ? { lt: before } : {}), ...(after ? { gt: after } : {}), ...(ceiling ? { lte: ceiling } : {}) } },
+      orderBy: { id: after ? 'asc' : 'desc' }, take: 11,
+    });
+    const hasMore = rows.length > 10;
+    const items = rows.slice(0, 10);
+    if (after) items.reverse();
+    const unreadCount = await this.prisma.app_notification.count({ where: { receiverId: userId, deletedAt: null, readAt: null } });
+    return { items, hasMore, unreadCount };
+  }
+
+  async readNotification(id: number, userId: string) {
+    await this.prisma.app_notification.updateMany({ where: { id, receiverId: userId, deletedAt: null, readAt: null }, data: { readAt: new Date() } });
+    return { success: true };
+  }
+
+  async hideNotification(id: number, userId: string) {
+    const result = await this.prisma.app_notification.updateMany({
+      where: { id, receiverId: userId, deletedAt: null, readAt: { not: null } }, data: { deletedAt: new Date() },
+    });
+    if (!result.count) throw new BadRequestException('확인한 알림만 삭제할 수 있습니다.');
+    return { success: true };
+  }
+
+  async respondToSchedule(id: number, userId: string, action: string, token: string) {
+    if (!['accept', 'reject'].includes(action) || !token) throw new BadRequestException('잘못된 요청입니다.');
+    return this.prisma.$transaction(async tx => {
+      const changed = await tx.schedule_participant.updateMany({
+        where: { scheduleId: id, userId, invitationStatus: 'pending', invitationToken: token },
+        data: { invitationStatus: action === 'accept' ? 'accepted' : 'rejected', respondedAt: new Date() },
+      });
+      if (!changed.count) throw new ConflictException('이미 처리되었거나 만료된 요청입니다.');
+      await tx.app_notification.updateMany({ where: { receiverId: userId, invitationToken: token, readAt: null }, data: { readAt: new Date() } });
+      if (action === 'accept') {
+        const schedule = await tx.schedule.findUniqueOrThrow({ where: { id } });
+        const participants = await tx.schedule_participant.findMany({ where: { scheduleId: id, invitationStatus: 'accepted', userId: { not: null } }, select: { userId: true } });
+        await this.updateDiveBuddies(tx, id, schedule.scheduleDate, schedule.instructorId, participants.map(p => p.userId!));
+      }
+      return { success: true };
+    });
+  }
+
+  async manageScheduleInvitation(id: number, participantId: number, userId: string, action: string) {
+    if (!['remove', 'resend'].includes(action)) throw new BadRequestException('잘못된 요청입니다.');
+    const notificationId = await this.prisma.$transaction(async tx => {
+      const schedule = await tx.schedule.findUnique({ where: { id } });
+      if (!schedule || schedule.instructorId !== userId) throw new ForbiddenException('요청 관리 권한이 없습니다.');
+      const participant = await tx.schedule_participant.findFirst({ where: { scheduleId: id, user: { id: participantId } } });
+      if (!participant?.userId || participant.invitationStatus !== 'rejected') throw new ConflictException('거절된 요청만 처리할 수 있습니다.');
+      const token = randomUUID();
+      const changed = await tx.schedule_participant.updateMany({
+        where: { id: participant.id, invitationStatus: 'rejected', invitationToken: participant.invitationToken },
+        data: { invitationStatus: action === 'resend' ? 'pending' : 'removed', invitationToken: token, respondedAt: null },
+      });
+      if (!changed.count) throw new ConflictException('이미 처리된 요청입니다.');
+      if (action === 'remove') return null;
+      return (await this.queueScheduleInvitation(tx, id, userId, participant.userId, token)).id;
+    });
+    if (notificationId) await this.sendScheduleNotifications([notificationId]);
+    return { success: true };
+  }
+
   async getInProgressLicenses(userIntId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userIntId },
@@ -830,7 +931,10 @@ export class AllblueService {
     instructorIntId: number,
     instructorNickname: string,
     scheduleCategoryCode: string,
+    notificationIds: number[] = [],
+    previous?: { id: number; invitationStatus: string; invitationToken: string | null; respondedAt: Date | null },
   ) {
+    const newInvitation = !previous || previous.invitationStatus === 'removed';
     if (p.guestNickname) {
       // 게스트 참가자
       const guest = await tx.guest_user.create({
@@ -860,9 +964,22 @@ export class AllblueService {
     });
     if (!user) return;
 
-    const participant = await tx.schedule_participant.create({
-      data: { scheduleId, userId: user.userId, categoryCode: p.categoryCode ?? null },
-    });
+    const participantData = {
+      scheduleId, userId: user.userId, categoryCode: p.categoryCode ?? scheduleCategoryCode,
+      ...(newInvitation ? {
+        invitationStatus: user.userId === instructorUserId ? 'accepted' : 'pending',
+        invitationToken: randomUUID(), respondedAt: null,
+      } : {}),
+    };
+    // Keep the row and invitation token during edits, including concurrent replies.
+    const participant = previous
+      ? await tx.schedule_participant.update({ where: { id: previous.id }, data: participantData })
+      : await tx.schedule_participant.create({ data: participantData });
+    if (previous) await tx.schedule_participant_license.deleteMany({ where: { scheduleParticipantId: participant.id } });
+    if (newInvitation && user.userId !== instructorUserId) {
+      const notification = await this.queueScheduleInvitation(tx, scheduleId, instructorUserId, user.userId, participant.invitationToken);
+      notificationIds.push(notification.id);
+    }
 
     // newLicenses: 새 자격증 과정 생성
     const allUserLicenseIds = [...(p.userLicenseIds ?? [])];
@@ -891,11 +1008,16 @@ export class AllblueService {
       });
     }
 
+    // Keep documents already attached to an unchanged participant when editing.
+    const currentForms: { formId: string }[] = previous
+      ? await tx.form_submission.findMany({ where: { scheduleId, participantUserId: user.userId }, select: { formId: true } }) : [];
+    const missingForms = ['liability', 'medical'].filter(formId => !currentForms.some(form => form.formId === formId));
+    if (!missingForms.length) return;
     // form_submission 생성
-    const isCert = scheduleCategoryCode === 'CERTIFICATION';
+    const isCert = (p.categoryCode ?? scheduleCategoryCode) === 'CERTIFICATION';
     if (isCert) {
       const licenseId = await this.findPriorityLicenseId(tx, user.userId, allUserLicenseIds);
-      for (const formId of ['liability', 'medical']) {
+      for (const formId of missingForms) {
         if (licenseId) {
           const existing = await tx.form_submission.findFirst({
             where: {
@@ -923,7 +1045,7 @@ export class AllblueService {
       }
     } else {
       await tx.form_submission.createMany({
-        data: ['liability', 'medical'].map(formId => ({
+        data: missingForms.map(formId => ({
           uuid: randomUUID(),
           formId,
           diverName: user.nickname ?? user.userName ?? '',
@@ -948,6 +1070,9 @@ export class AllblueService {
     if (!categoryCode) {
       return { success: false, message: '분류를 선택해주세요.' };
     }
+    await this.requireTeachingAccess(instructorUserId, [categoryCode, ...(participants ?? []).map((p: any) => p.categoryCode)]);
+    const notificationIds: number[] = [];
+
     if (startHour < 0 || startHour > 23 || startMinute < 0 || startMinute > 59) {
       return { success: false, message: '시간을 올바르게 입력해주세요.' };
     }
@@ -975,7 +1100,7 @@ export class AllblueService {
       // 새 participants 배열 처리
       if (participants?.length > 0) {
         for (const p of participants) {
-          await this.processParticipant(tx, schedule.id, p, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
+          await this.processParticipant(tx, schedule.id, p, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds);
         }
       } else {
         // 하위 호환: 기존 participantIds/guests 방식
@@ -985,20 +1110,20 @@ export class AllblueService {
             select: { id: true, userId: true, nickname: true, userName: true },
           });
           for (const u of users) {
-            await this.processParticipant(tx, schedule.id, { userId: u.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
+            await this.processParticipant(tx, schedule.id, { userId: u.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds);
           }
         }
         if (guests?.length > 0) {
           for (const g of guests) {
             if (!g.nickname?.trim()) continue;
-            await this.processParticipant(tx, schedule.id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
+            await this.processParticipant(tx, schedule.id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds);
           }
         }
       }
 
       // dive_buddy 갱신
       const allParticipants = await tx.schedule_participant.findMany({
-        where: { scheduleId: schedule.id, userId: { not: null } },
+        where: { scheduleId: schedule.id, userId: { not: null }, invitationStatus: 'accepted' },
         select: { userId: true },
       });
       await this.updateDiveBuddies(tx, schedule.id, new Date(scheduleDate), instructorUserId, allParticipants.map(p => p.userId!));
@@ -1006,33 +1131,7 @@ export class AllblueService {
       return { success: true, scheduleId: schedule.id };
     });
 
-    // 푸시 알림 (실패해도 일정 생성 응답에 영향 없음)
-    if (txResult.scheduleId) {
-      try {
-        const parts = await this.prisma.schedule_participant.findMany({
-          where: { scheduleId: txResult.scheduleId, userId: { not: null } },
-          select: { userId: true },
-        });
-        const recipientIds = parts
-          .map(p => p.userId!)
-          .filter(uid => uid !== instructorUserId);
-
-        if (recipientIds.length > 0) {
-          const instructorUser = await this.prisma.user.findUnique({
-            where: { userId: instructorUserId },
-            select: { nickname: true },
-          });
-          this.push.sendPushNotifications({
-            title: '다이빙 등록',
-            body: `${instructorUser?.nickname ?? ''}님이 다이빙 일정에 다이버님을 등록했어요.`,
-            userIds: recipientIds,
-            data: { type: 'schedule', scheduleId: txResult.scheduleId },
-          });
-        }
-      } catch (err) {
-        console.error('[Push] 일정 생성 푸시 발송 실패:', err);
-      }
-    }
+    await this.sendScheduleNotifications(notificationIds);
 
     return txResult;
   }
@@ -1049,7 +1148,7 @@ export class AllblueService {
         scheduleDate,
         OR: [
           { instructorId: userId },
-          { participants: { some: { userId } } },
+          { participants: { some: { userId, invitationStatus: { in: ['pending', 'accepted'] } } } },
         ],
       },
       orderBy: [{ startHour: 'asc' }, { startMinute: 'asc' }],
@@ -1080,9 +1179,10 @@ export class AllblueService {
         categoryCode: s.categoryCode,
         categoryName: codeMap.get(s.categoryCode) ?? s.categoryCode,
         instructorName: s.instructor.nickname,
-        participantCount: s.participants.length,
-        participantNames: s.participants.map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
-        participants: s.participants.map(p => ({
+        invitationStatus: s.participants.find(p => p.userId === userId)?.invitationStatus ?? null,
+          participantCount: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).length,
+        participantNames: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
+        participants: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => ({
           nickname: p.user?.nickname ?? p.guest?.nickname ?? '',
           name: p.user?.userName ?? null,
           level: p.user?.profile?.level ?? null,
@@ -1094,12 +1194,28 @@ export class AllblueService {
   private async getScheduleScope(userId: string, filter?: string): Promise<{ whereFilter?: any; result?: any }> {
     let whereFilter: any;
 
+    // Old notification links do not grant access by themselves. Resolve them
+    // through the same current calendar scopes, including after a rejection.
+    if (filter === 'notification') {
+      const groups = await this.prisma.friend_group.findMany({ where: { userId }, select: { id: true } });
+      const scopes = await Promise.all(['mine', 'instructor', 'closeFriend', ...groups.map(g => `group_${g.id}`)]
+        .map(key => this.getScheduleScope(userId, key)));
+      return { whereFilter: { OR: scopes.filter(scope => !scope.result).map(scope => scope.whereFilter) } };
+    }
+
     if (filter === 'instructor') {
-      const buddies = await this.prisma.dive_buddy.findMany({
-        where: { userId },
-        select: { buddyId: true },
+      const lessons = await this.prisma.schedule_participant.findMany({
+        where: {
+          userId, invitationStatus: 'accepted',
+          schedule: { scheduleDate: { lte: new Date() } },
+          OR: [
+            { categoryCode: { in: ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'] } },
+            { categoryCode: null, schedule: { categoryCode: { in: ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'] } } },
+          ],
+        },
+        select: { schedule: { select: { instructorId: true } } },
       });
-      const buddyIds = buddies.map(b => b.buddyId);
+      const buddyIds = [...new Set(lessons.map(p => p.schedule.instructorId))];
 
       if (buddyIds.length === 0) {
         return { result: { schedules: [] } };
@@ -1108,14 +1224,15 @@ export class AllblueService {
       whereFilter = {
         visibility: 'public',
         instructorId: { in: buddyIds },
-        instructor: { profile: { level: { in: ['5', 'I'] } } },
+        instructor: { profile: { level: { in: ['5', 'A'] } } },
       };
     } else if (filter === 'closeFriend') {
       const closeFriends = await this.prisma.close_friend.findMany({
         where: { userId },
         select: { friendId: true },
       });
-      const friendIds = closeFriends.map(f => f.friendId);
+      const mutual = await this.prisma.close_friend.findMany({ where: { userId: { in: closeFriends.map(f => f.friendId) }, friendId: userId }, select: { userId: true } });
+      const friendIds = mutual.map(f => f.userId);
 
       if (friendIds.length === 0) {
         return { result: { schedules: [] } };
@@ -1124,7 +1241,7 @@ export class AllblueService {
       whereFilter = {
         OR: [
           { instructorId: { in: friendIds } },
-          { participants: { some: { userId: { in: friendIds } } } },
+          { participants: { some: { userId: { in: friendIds }, invitationStatus: 'accepted' } } },
         ],
       };
     } else if (filter?.startsWith('group_')) {
@@ -1149,16 +1266,13 @@ export class AllblueService {
 
       whereFilter = {
         visibility: 'public',
-        OR: [
-          { instructorId: { in: memberIds } },
-          { participants: { some: { userId: { in: memberIds } } } },
-        ],
+        instructorId: { in: memberIds },
       };
     } else {
       whereFilter = {
         OR: [
           { instructorId: userId },
-          { participants: { some: { userId } } },
+          { participants: { some: { userId, invitationStatus: { in: ['pending', 'accepted'] } } } },
         ],
       };
     }
@@ -1212,7 +1326,7 @@ export class AllblueService {
         // 강사 + 참석자 레벨 수집 (null/미설정은 '0'으로 취급)
         const levels: string[] = [];
         levels.push(s.instructor.profile?.level || '0');
-        for (const p of s.participants) {
+        for (const p of s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus))) {
           levels.push(p.user?.profile?.level || '0');
         }
 
@@ -1229,8 +1343,9 @@ export class AllblueService {
           categoryCode: s.categoryCode,
           categoryName: codeMap.get(s.categoryCode) ?? s.categoryCode,
           instructorName: s.instructor.nickname,
-          participantCount: s.participants.length,
-          participantNames: s.participants.map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
+          invitationStatus: s.participants.find(p => p.userId === userId)?.invitationStatus ?? null,
+          participantCount: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).length,
+          participantNames: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
           minLevel,
         };
       }),
@@ -1278,7 +1393,7 @@ export class AllblueService {
 
     // 권한 체크: 강사이거나 참석자여야 함
     const isOwner = schedule.instructorId === userId;
-    const myParticipant = schedule.participants.find(p => p.userId === userId);
+    const myParticipant = schedule.participants.find(p => p.userId === userId && !['rejected', 'removed'].includes(p.invitationStatus));
     const isParticipant = !!myParticipant;
     if (!isOwner && !isParticipant) {
       const scope = await this.getScheduleScope(userId, filter);
@@ -1321,10 +1436,12 @@ export class AllblueService {
         categoryCode: schedule.categoryCode,
         categoryName: code?.nameKo ?? code?.name ?? schedule.categoryCode,
         instructorName: schedule.instructor.nickname,
-        participants: await Promise.all(schedule.participants.map(async p => {
+        participants: await Promise.all(schedule.participants.filter(p => p.invitationStatus !== 'removed' && (isOwner || p.invitationStatus !== 'rejected')).map(async p => {
           const isGuest = !p.user;
+          const invitation = { invitationStatus: p.invitationStatus, invitationToken: p.userId === userId ? p.invitationToken : null };
           if (!isOwner && (isGuest || p.userId !== userId)) {
             return {
+              ...invitation,
               id: isGuest ? p.guest!.id : p.user!.id,
               nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
               name: isGuest ? null : (p.user!.userName ?? null),
@@ -1349,7 +1466,7 @@ export class AllblueService {
           let medicalReused = false;
 
           // 자격증 과정에서 재사용 문서 조회
-          if (!isGuest && schedule.categoryCode === 'CERTIFICATION') {
+          if (!isGuest && (p.categoryCode ?? schedule.categoryCode) === 'CERTIFICATION') {
             const instructorIntId = (await this.prisma.user.findUnique({
               where: { userId: schedule.instructorId },
               select: { id: true },
@@ -1398,7 +1515,8 @@ export class AllblueService {
           const baseUrl = 'https://rumbaugh.co.kr/form';
 
           return {
-            id: isGuest ? p.guest!.id : p.user!.id,
+            ...invitation,
+              id: isGuest ? p.guest!.id : p.user!.id,
             nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
             name: isGuest ? null : (p.user!.userName ?? null),
             isGuest,
@@ -1412,8 +1530,8 @@ export class AllblueService {
             medicalSigned: medical?.status === 'submitted',
             waiverUrl: waiver?.status === 'submitted' ? `${baseUrl}/${waiver.uuid}` : null,
             medicalUrl: medical?.status === 'submitted' ? `${baseUrl}/${medical.uuid}` : null,
-            waiverUuid: waiver?.uuid ?? null,
-            medicalUuid: medical?.uuid ?? null,
+            waiverUuid: p.invitationStatus === 'pending' || p.invitationStatus === 'rejected' ? null : waiver?.uuid ?? null,
+            medicalUuid: p.invitationStatus === 'pending' || p.invitationStatus === 'rejected' ? null : medical?.uuid ?? null,
             waiverReused,
             medicalReused,
             level: isGuest ? '0' : (p.user!.profile?.level ?? '0'),
@@ -1474,11 +1592,14 @@ export class AllblueService {
     if (!categoryCode) {
       return { success: false, message: '분류를 선택해주세요.' };
     }
+    await this.requireTeachingAccess(instructorUserId, [categoryCode, ...(participants ?? []).map((p: any) => p.categoryCode)]);
+    const notificationIds: number[] = [];
+
     if (startHour < 0 || startHour > 23 || startMinute < 0 || startMinute > 59) {
       return { success: false, message: '시간을 올바르게 입력해주세요.' };
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. schedule 본문 수정
       await tx.schedule.update({
         where: { id },
@@ -1499,11 +1620,13 @@ export class AllblueService {
         select: { id: true, nickname: true },
       });
 
-      // 2. participants 배열이 전달된 경우 — 기존 참가자 삭제 후 재생성
+      // 2. 기존 참가자는 초대 상태를 보존하고 변경된 항목만 반영
       if (participants !== undefined && participants !== null) {
         // 기존 참가자 정리 (form_submission은 보존)
-        const existingParts = await tx.schedule_participant.findMany({ where: { scheduleId: id } });
+        const existingParts = await tx.schedule_participant.findMany({ where: { scheduleId: id }, include: { user: { select: { id: true } } } });
         for (const ep of existingParts) {
+          const retained = participants.find((p: any) => p.userId === ep.user?.id);
+          if (retained && (retained.categoryCode ?? categoryCode) === (ep.categoryCode ?? schedule.categoryCode)) continue;
           if (ep.userId) {
             await tx.form_submission.deleteMany({
               where: { scheduleId: id, participantUserId: ep.userId, status: { not: 'submitted' } },
@@ -1523,11 +1646,13 @@ export class AllblueService {
             });
           }
         }
-        await tx.schedule_participant.deleteMany({ where: { scheduleId: id } });
+        const retainedUserIds = participants.map((p: any) => p.userId);
+        const removedIds = existingParts.filter(ep => !retainedUserIds.includes(ep.user?.id)).map(ep => ep.id);
+        if (removedIds.length) await tx.schedule_participant.deleteMany({ where: { id: { in: removedIds } } });
 
-        // 새 참가자 생성
+        // 기존 참가자는 상태를 보존하고 신규 참가자만 초대
         for (const p of participants) {
-          await this.processParticipant(tx, id, p, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
+          await this.processParticipant(tx, id, p, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds, existingParts.find(ep => ep.user?.id === p.userId));
         }
       } else {
         // 하위 호환: 기존 participantIds/guests 방식
@@ -1548,7 +1673,7 @@ export class AllblueService {
           }
           for (const addedUserId of newUserIds.filter(uid => !existingUserIds.includes(uid))) {
             const user = newUsers.find(u => u.userId === addedUserId)!;
-            await this.processParticipant(tx, id, { userId: user.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
+            await this.processParticipant(tx, id, { userId: user.id, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds);
           }
         }
         if (guests !== undefined && guests !== null) {
@@ -1560,20 +1685,22 @@ export class AllblueService {
           }
           for (const g of guests) {
             if (!g.nickname?.trim()) continue;
-            await this.processParticipant(tx, id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode);
+            await this.processParticipant(tx, id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds);
           }
         }
       }
 
       // dive_buddy 갱신 - 현재 참석자 전체 기준
       const finalParticipants = await tx.schedule_participant.findMany({
-        where: { scheduleId: id, userId: { not: null } },
+        where: { scheduleId: id, userId: { not: null }, invitationStatus: 'accepted' },
         select: { userId: true },
       });
       await this.updateDiveBuddies(tx, id, new Date(scheduleDate), instructorUserId, finalParticipants.map(p => p.userId!));
 
       return { success: true };
     });
+    await this.sendScheduleNotifications(notificationIds);
+    return result;
   }
 
   async getUserAchievements(userIntId: number, currentUserId: number) {
@@ -2078,6 +2205,15 @@ export class AllblueService {
 
     if (!scheduleId || !participantId) {
       return { success: false, message: '필수 항목을 입력해주세요.' };
+    }
+
+    const author = await this.prisma.user.findUnique({ where: { id: createdBy }, select: { userId: true, profile: { select: { level: true } } } });
+    const participant = await this.prisma.schedule_participant.findFirst({
+      where: { scheduleId, invitationStatus: 'accepted', user: { id: participantId } }, include: { schedule: true },
+    });
+    if (!author || !['5', 'A'].includes(String(author.profile?.level).toUpperCase()) || !participant || participant.schedule.instructorId !== author.userId ||
+      !['EXPERIENCE', 'CERTIFICATION', 'LECTURE'].includes(participant.categoryCode ?? participant.schedule.categoryCode)) {
+      throw new ForbiddenException('수락한 교육생의 디브리핑만 작성할 수 있습니다.');
     }
 
     await this.prisma.debriefing.create({

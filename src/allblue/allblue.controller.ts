@@ -7,6 +7,36 @@ import { AllblueJwtAuthGuard } from './allblue-jwt-auth.guard';
 export class AllblueController {
   constructor(private readonly allblueService: AllblueService) {}
 
+  @UseGuards(AllblueJwtAuthGuard)
+  @Get('notifications')
+  notifications(@Query() query: any, @Req() req: any) {
+    return this.allblueService.listNotifications(req.user.userId, query);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Patch('notifications/:id/read')
+  readNotification(@Param('id') id: string, @Req() req: any) {
+    return this.allblueService.readNotification(Number(id), req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Delete('notifications/:id')
+  hideNotification(@Param('id') id: string, @Req() req: any) {
+    return this.allblueService.hideNotification(Number(id), req.user.userId);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('schedule/:id/invitation/respond')
+  respondToSchedule(@Param('id') id: string, @Body() body: any, @Req() req: any) {
+    return this.allblueService.respondToSchedule(Number(id), req.user.userId, body.action, body.token);
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
+  @Post('schedule/:id/invitation/:participantId')
+  manageInvitation(@Param('id') id: string, @Param('participantId') participantId: string, @Body() body: any, @Req() req: any) {
+    return this.allblueService.manageScheduleInvitation(Number(id), Number(participantId), req.user.userId, body.action);
+  }
+
   @Post('doInstructorLogin')
   login(@Body() body: { userId: string; password: string }, @Req() req: any) {
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;

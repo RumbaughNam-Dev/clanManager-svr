@@ -21,7 +21,8 @@ function fixture(categoryCode = 'CERTIFICATION') {
     user_license: { findMany: jest.fn().mockResolvedValue([{ license: { id: 20, associationId: 1 } }]) },
     common_code: { findUnique: jest.fn().mockResolvedValue(null) },
     debriefing: { findMany: jest.fn().mockResolvedValue([]) },
-    schedule_participant: { create: jest.fn().mockResolvedValue({ id: 50 }) },
+    schedule_participant: { create: jest.fn().mockImplementation(async ({ data }) => ({ id: 50, ...data })) },
+    app_notification: { create: jest.fn().mockResolvedValue({ id: 1 }) },
     schedule_participant_license: { createMany: jest.fn() },
     form_submission: {
       findFirst: jest.fn().mockImplementation(({ where }) => Promise.resolve(records.find(record =>
@@ -51,7 +52,7 @@ it.each(['EXPERIENCE', 'TRAINING'])('%s always requires its own documents', asyn
   const result = await service.getScheduleDetail(12, 'teacher');
   expect(result.schedule?.participants[0]).toMatchObject({ waiverSigned: false, medicalSigned: false, waiverReused: false });
   expect(prisma.form_submission.findFirst).not.toHaveBeenCalled();
-  await (service as any).processParticipant(prisma, 12, { userId: 2, categoryCode: 'CERTIFICATION', userLicenseIds: [100] }, 'teacher', 10, 'Teacher', category);
+  await (service as any).processParticipant(prisma, 12, { userId: 2, categoryCode: category, userLicenseIds: [100] }, 'teacher', 10, 'Teacher', category);
   expect(prisma.form_submission.createMany).toHaveBeenCalledTimes(1);
   expect(prisma.form_submission.createMany.mock.calls[0][0].data).toHaveLength(2);
 });
@@ -144,4 +145,35 @@ it('lists all active courses for the selected student, regardless of the registe
   const result = await service.getInProgressLicenses(2);
   expect(result.licenses.map(license => license.userLicenseId)).toEqual([100, 101]);
   expect(prisma.user_license.findMany.mock.calls[0][0].where).toEqual({ userId: 'student', status: 'IN_PROGRESS' });
+});
+
+it('creates a pending invitation with durable sender/receiver data for a new participant', async () => {
+  const { service, prisma } = fixture();
+  const ids: number[] = [];
+  await (service as any).processParticipant(prisma, 12, { userId: 2, categoryCode: 'CERTIFICATION', userLicenseIds: [100] }, 'teacher', 10, 'Teacher', 'CERTIFICATION', ids);
+  expect(prisma.schedule_participant.create.mock.calls[0][0].data).toMatchObject({ invitationStatus: 'pending', userId: 'student' });
+  expect(prisma.app_notification.create.mock.calls[0][0].data).toMatchObject({ senderId: 'teacher', receiverId: 'student', scheduleId: 12 });
+  expect(ids).toEqual([1]);
+});
+
+it('editing an existing participant preserves concurrent invitation replies and attached forms', async () => {
+  const { service, prisma } = fixture();
+  const tx: any = prisma;
+  tx.schedule_participant.update = jest.fn().mockResolvedValue({ id: 50, invitationStatus: 'accepted', invitationToken: 'original' });
+  tx.schedule_participant_license.deleteMany = jest.fn();
+  tx.form_submission.findMany = jest.fn().mockResolvedValue([{ formId: 'liability' }, { formId: 'medical' }]);
+  const previous = { id: 50, invitationStatus: 'pending', invitationToken: 'original', respondedAt: null };
+  await (service as any).processParticipant(tx, 12, { userId: 2, userLicenseIds: [100] }, 'teacher', 10, 'Teacher', 'CERTIFICATION', [], previous);
+  expect(tx.schedule_participant.update.mock.calls[0][0].data).not.toHaveProperty('invitationStatus');
+  expect(tx.schedule_participant.update.mock.calls[0][0].data).not.toHaveProperty('invitationToken');
+  expect(prisma.app_notification.create).not.toHaveBeenCalled();
+  expect(prisma.form_submission.create).not.toHaveBeenCalled();
+  expect(prisma.form_submission.createMany).not.toHaveBeenCalled();
+});
+
+it('personal experience classification requires fresh documents even in a certification schedule', async () => {
+  const { service, prisma } = fixture();
+  await (service as any).processParticipant(prisma, 12, { userId: 2, categoryCode: 'EXPERIENCE', userLicenseIds: [] }, 'teacher', 10, 'Teacher', 'CERTIFICATION');
+  expect(prisma.form_submission.findFirst).not.toHaveBeenCalled();
+  expect(prisma.form_submission.createMany).toHaveBeenCalledTimes(1);
 });
