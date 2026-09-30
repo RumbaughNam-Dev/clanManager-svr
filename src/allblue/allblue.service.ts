@@ -696,7 +696,7 @@ export class AllblueService {
 
     const users = await this.prisma.user.findMany({
       where: { OR: [{ nickname: { contains: q.trim() } }, { userName: { contains: q.trim() } }] },
-      select: { id: true, userId: true, nickname: true, userName: true, phone: true, birthDate: true, profile: { select: { level: true } } },
+      select: { id: true, userId: true, nickname: true, userName: true, profileImage: true, phone: true, birthDate: true, profile: { select: { level: true } } },
     });
 
     // 현재 강사의 교육생(참가자로 등록된 적 있는 유저)을 최상단
@@ -718,7 +718,7 @@ export class AllblueService {
     });
 
     return {
-      users: sorted.map(u => ({ id: u.id, nickname: u.nickname, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? '0' })),
+      users: sorted.map(u => ({ id: u.id, nickname: u.nickname, profileImage: u.profileImage ?? null, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? '0' })),
     };
   }
 
@@ -1943,7 +1943,7 @@ export class AllblueService {
     const buddyUsers = await this.prisma.user.findMany({
       where: { userId: { in: items.map(b => b.buddyId) } },
       select: {
-        userId: true, nickname: true, userName: true,
+        userId: true, nickname: true, userName: true, profileImage: true,
         profile: { select: { level: true } },
       },
     });
@@ -1958,6 +1958,7 @@ export class AllblueService {
           userId: b.buddyId,
           nickname: u?.nickname ?? '',
           name: u?.userName ?? null,
+          profileImage: u?.profileImage ?? null,
           level: u?.profile?.level ?? '0',
           lastDiveDate: dateStr,
         };
@@ -1993,7 +1994,7 @@ export class AllblueService {
     const users = await this.prisma.user.findMany({
       where: { userId: { in: studentUserIds } },
       select: {
-        userId: true, nickname: true, userName: true,
+        userId: true, nickname: true, userName: true, profileImage: true,
         profile: { select: { level: true } },
         licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
       },
@@ -2004,6 +2005,7 @@ export class AllblueService {
         userId: u.userId,
         nickname: u.nickname,
         name: u.userName ?? null,
+        profileImage: u.profileImage ?? null,
         level: u.profile?.level ?? '0',
         memo: memoMap.get(u.userId) ?? '',
         licenseName: u.licenses[0]?.license?.nameKo ?? u.licenses[0]?.license?.name ?? null,
@@ -2060,7 +2062,7 @@ export class AllblueService {
       include: {
         friend: {
           select: {
-            userId: true, nickname: true, userName: true,
+            userId: true, nickname: true, userName: true, profileImage: true,
             profile: { select: { level: true } },
             licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
           },
@@ -2073,6 +2075,7 @@ export class AllblueService {
         userId: f.friend!.userId,
         nickname: f.friend!.nickname,
         name: f.friend!.userName ?? null,
+        profileImage: f.friend!.profileImage ?? null,
         level: f.friend!.profile?.level ?? '0',
         memo: f.memo,
         pinned: f.pinned === 1,
