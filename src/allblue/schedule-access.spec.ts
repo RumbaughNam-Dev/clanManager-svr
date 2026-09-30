@@ -17,7 +17,7 @@ function fixture() {
     common_code: { findUnique: jest.fn().mockResolvedValue(null) },
     debriefing: { findMany: jest.fn().mockResolvedValue([]) },
   };
-  const service = Object.assign(Object.create(AllblueService.prototype), { prisma }) as AllblueService;
+  const service = Object.assign(Object.create(AllblueService.prototype), { prisma, getDivingLogStudentIds: jest.fn().mockResolvedValue(new Set()) }) as AllblueService;
   return { service, prisma };
 }
 

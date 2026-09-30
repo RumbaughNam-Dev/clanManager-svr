@@ -215,8 +215,8 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Get('user/:id/debriefings')
-  getUserDebriefings(@Param('id') id: string, @Query('page') page: string, @Query('limit') limit: string) {
-    return this.allblueService.getUserDebriefings(Number(id), Number(page) || 1, Number(limit) || 10);
+  getUserDebriefings(@Param('id') id: string, @Query('page') page: string, @Query('limit') limit: string, @Req() req: any) {
+    return this.allblueService.getUserDebriefings(Number(id), Number(page) || 1, Number(limit) || 10, Number(req.user.sub));
   }
 
   @UseGuards(AllblueJwtAuthGuard)

@@ -518,25 +518,8 @@ export class AllblueService {
 
     const result = await this.getProfile(user.id);
 
-    // isMyStudent 판정
-    let isMyStudent = false;
-    const currentUser = await this.prisma.user.findUnique({
-      where: { userId: currentUserId },
-      select: { profile: { select: { level: true } } },
-    });
-    const level = currentUser?.profile?.level;
-    if (level === '5' || level?.toUpperCase() === 'A') {
-      const count = await this.prisma.schedule_participant.count({
-        where: {
-          userId,
-          schedule: {
-            instructorId: currentUserId,
-            categoryCode: { in: ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'] },
-          },
-        },
-      });
-      isMyStudent = count > 0;
-    }
+    const students = await this.getDivingLogStudentIds(currentUserId);
+    const isMyStudent = currentUserId !== userId && students.has(userId);
 
     return { ...result, isMyStudent };
   }
@@ -1431,6 +1414,7 @@ export class AllblueService {
       distinct: ['participantId'],
     });
     const debriefedIds = new Set(debriefings.map(d => d.participantId));
+    const divingLogStudents = await this.getDivingLogStudentIds(userId);
 
     const d = schedule.scheduleDate;
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1451,7 +1435,12 @@ export class AllblueService {
         instructorName: schedule.instructor.nickname,
         participants: await Promise.all(schedule.participants.filter(p => p.invitationStatus !== 'removed' && (isOwner || p.invitationStatus !== 'rejected')).map(async p => {
           const isGuest = !p.user;
-          const invitation = { invitationStatus: p.invitationStatus, invitationToken: p.userId === userId ? p.invitationToken : null };
+          const invitation = {
+            invitationStatus: p.invitationStatus,
+            invitationToken: p.userId === userId ? p.invitationToken : null,
+            canViewDivingLog: !isGuest && (p.userId === userId || divingLogStudents.has(p.userId!)),
+            canWriteDebriefing: !isGuest && isOwner && divingLogStudents.has(p.userId!),
+          };
           if (!isOwner && (isGuest || p.userId !== userId)) {
             return {
               ...invitation,
@@ -1720,7 +1709,53 @@ export class AllblueService {
     return result;
   }
 
+  private async getDivingLogStudentIds(viewerId: string): Promise<Set<string>> {
+    const viewer = await this.prisma.user.findUnique({
+      where: { userId: viewerId }, select: { profile: { select: { level: true } } },
+    });
+    if (!['5', 'A'].includes(String(viewer?.profile?.level).toUpperCase())) return new Set();
+
+    // Schedule dates and hours are entered in Korean local time.
+    const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const today = new Date(now.toISOString().slice(0, 10));
+    const categories = ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'];
+    const participants = await this.prisma.schedule_participant.findMany({
+      where: {
+        userId: { not: null }, invitationStatus: 'accepted',
+        OR: [
+          { categoryCode: { in: categories } },
+          { categoryCode: null, schedule: { categoryCode: { in: categories } } },
+        ],
+        schedule: {
+          instructorId: viewerId,
+          OR: [
+            { scheduleDate: { lt: today } },
+            { scheduleDate: today, startHour: { lt: now.getUTCHours() } },
+            { scheduleDate: today, startHour: now.getUTCHours(), startMinute: { lte: now.getUTCMinutes() } },
+          ],
+        },
+      },
+      select: { userId: true }, distinct: ['userId'],
+    });
+    return new Set(participants.flatMap(p => p.userId && p.userId !== viewerId ? [p.userId] : []));
+  }
+
+  private async assertDivingLogAccess(viewerIntId: number, targetIntId: number, allowSelf = true) {
+    if (!Number.isInteger(viewerIntId) || viewerIntId <= 0 || !Number.isInteger(targetIntId) || targetIntId <= 0) {
+      throw new ForbiddenException('다이빙 로그 조회 권한이 없습니다.');
+    }
+    if (allowSelf && viewerIntId === targetIntId) return;
+    const [viewer, target] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: viewerIntId }, select: { userId: true } }),
+      this.prisma.user.findUnique({ where: { id: targetIntId }, select: { userId: true } }),
+    ]);
+    if (!viewer || !target || !(await this.getDivingLogStudentIds(viewer.userId)).has(target.userId)) {
+      throw new ForbiddenException('교육 이력이 있는 교육생의 다이빙 로그만 조회할 수 있습니다.');
+    }
+  }
+
   async getUserAchievements(userIntId: number, currentUserId: number) {
+    await this.assertDivingLogAccess(currentUserId, userIntId);
     // user.id(INT) → user.userId(VARCHAR) 조회
     const user = await this.prisma.user.findUnique({
       where: { id: userIntId },
@@ -1810,6 +1845,8 @@ export class AllblueService {
       return { success: false, message: 'requirementId와 userId는 필수입니다.' };
     }
 
+    await this.assertDivingLogAccess(currentUserId, userId, false);
+
     const existing = await this.prisma.user_license_achievement.findUnique({
       where: { userId_requirementId: { userId, requirementId } },
     });
@@ -1853,7 +1890,8 @@ export class AllblueService {
     return { success: true };
   }
 
-  async getUserDebriefings(userIntId: number, page: number, limit: number) {
+  async getUserDebriefings(userIntId: number, page: number, limit: number, currentUserId: number) {
+    await this.assertDivingLogAccess(currentUserId, userIntId);
     const offset = (page - 1) * limit;
 
     const debriefings = await this.prisma.debriefing.findMany({

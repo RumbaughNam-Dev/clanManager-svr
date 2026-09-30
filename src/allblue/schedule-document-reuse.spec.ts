@@ -31,7 +31,7 @@ function fixture(categoryCode = 'CERTIFICATION') {
       create: jest.fn(), createMany: jest.fn(),
     },
   };
-  const service = Object.assign(Object.create(AllblueService.prototype), { prisma }) as AllblueService;
+  const service = Object.assign(Object.create(AllblueService.prototype), { prisma, getDivingLogStudentIds: jest.fn().mockResolvedValue(new Set()) }) as AllblueService;
   return { service, prisma, schedule, records };
 }
 
