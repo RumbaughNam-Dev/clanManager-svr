@@ -505,8 +505,8 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Patch('cert/requests/:id/approve')
-  approveCertRequest(@Param('id') id: string, @Body() body: { level: string }) {
-    return this.allblueService.approveCertRequest(Number(id), body.level);
+  approveCertRequest(@Param('id') id: string, @Body() body: { licenseId: number }) {
+    return this.allblueService.approveCertRequest(Number(id), body.licenseId);
   }
 
   @UseGuards(AllblueJwtAuthGuard)

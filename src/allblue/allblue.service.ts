@@ -455,6 +455,11 @@ export class AllblueService {
       select: {
         id: true, nickname: true, userName: true, profileImage: true, profile: true,
         userId: true, organizationStatus: true,
+        licenses: {
+          where: { status: 'COMPLETED' },
+          orderBy: [{ license: { association: { sortOrder: 'asc' } } }, { license: { levelOrder: 'desc' } }],
+          select: { license: { select: { id: true, name: true, nameKo: true } } },
+        },
         organization: { select: { id: true, name: true, logo: true, status: true, representativeId: true } },
       },
     });
@@ -498,6 +503,7 @@ export class AllblueService {
           : null,
       },
       profile,
+      certifications: Array.from(new Map(user.licenses.map(({ license }) => [license.id, license])).values()),
     };
   }
 
@@ -718,7 +724,7 @@ export class AllblueService {
     });
 
     return {
-      users: sorted.map(u => ({ id: u.id, nickname: u.nickname, profileImage: u.profileImage ?? null, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? '0' })),
+      users: sorted.map(u => ({ id: u.id, userId: u.userId, nickname: u.nickname, profileImage: u.profileImage ?? null, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? '0' })),
     };
   }
 
@@ -1183,6 +1189,7 @@ export class AllblueService {
           participantCount: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).length,
         participantNames: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
         participants: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => ({
+          userId: p.userId ?? null,
           nickname: p.user?.nickname ?? p.guest?.nickname ?? '',
           name: p.user?.userName ?? null,
           level: p.user?.profile?.level ?? null,
@@ -1346,6 +1353,12 @@ export class AllblueService {
           invitationStatus: s.participants.find(p => p.userId === userId)?.invitationStatus ?? null,
           participantCount: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).length,
           participantNames: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
+          participants: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => ({
+            userId: p.userId ?? null,
+            nickname: p.user?.nickname ?? p.guest?.nickname ?? '',
+            name: p.user?.userName ?? null,
+            level: p.user?.profile?.level ?? null,
+          })),
           minLevel,
         };
       }),
@@ -1443,6 +1456,7 @@ export class AllblueService {
             return {
               ...invitation,
               id: isGuest ? p.guest!.id : p.user!.id,
+            userId: isGuest ? null : p.userId,
               nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
               profileImage: isGuest ? null : (p.user!.profileImage ?? null),
               name: isGuest ? null : (p.user!.userName ?? null),
@@ -1518,6 +1532,7 @@ export class AllblueService {
           return {
             ...invitation,
             id: isGuest ? p.guest!.id : p.user!.id,
+            userId: isGuest ? null : p.userId,
             nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
             profileImage: isGuest ? null : (p.user!.profileImage ?? null),
             name: isGuest ? null : (p.user!.userName ?? null),
@@ -2979,49 +2994,64 @@ export class AllblueService {
     };
   }
 
-  async approveCertRequest(id: number, level: string) {
-    const request = await this.prisma.cert_request.findUnique({ where: { id } });
-    if (!request) {
-      return { success: false, message: '존재하지 않는 요청입니다.' };
+  async approveCertRequest(id: number, licenseId: number) {
+    if (!Number.isInteger(licenseId) || licenseId <= 0) {
+      return { success: false, message: '취득한 협회 자격증을 선택해주세요. 앱을 최신 버전으로 업데이트해주세요.' };
     }
-
-    await this.prisma.cert_request.update({
-      where: { id },
-      data: { status: 'approved' },
-    });
-
-    await this.prisma.user_profile.upsert({
-      where: { userId: request.userId },
-      create: { userId: request.userId, level },
-      update: { level },
-    });
-
-    // 강사(level=5)로 승격 시 schedulePublic 자동 설정
-    if (level === '5') {
-      const user = await this.prisma.user.findUnique({
-        where: { id: request.userId },
-        select: { userId: true },
+    return this.prisma.$transaction(async (tx) => {
+      const request = await tx.cert_request.findUnique({ where: { id } });
+      if (!request || request.status !== 'pending') {
+        return { success: false, message: '처리 가능한 요청이 아닙니다.' };
+      }
+      const license = await tx.license.findUnique({ where: { id: licenseId } });
+      if (!license || license.levelOrder < 1 || license.levelOrder > 5) {
+        return { success: false, message: '유효한 자격증을 선택해주세요.' };
+      }
+      const user = await tx.user.findUnique({
+        where: { id: request.userId }, select: { userId: true, profile: { select: { level: true } } },
       });
+      if (!user) return { success: false, message: '사용자를 찾을 수 없습니다.' };
+      const claimed = await tx.cert_request.updateMany({
+        where: { id, status: 'pending' }, data: { status: 'approved' },
+      });
+      if (!claimed.count) return { success: false, message: '이미 처리된 요청입니다.' };
 
-      if (user) {
-        const existing = await this.prisma.user_setting.findUnique({
+      const existingLicense = await tx.user_license.findFirst({
+        where: { userId: user.userId, licenseId }, orderBy: { id: 'asc' },
+      });
+      if (existingLicense) {
+        await tx.user_license.update({
+          where: { id: existingLicense.id },
+          data: { status: 'COMPLETED', completedAt: existingLicense.completedAt ?? new Date() },
+        });
+      } else {
+        await tx.user_license.create({
+          data: { userId: user.userId, licenseId, status: 'COMPLETED', completedAt: new Date() },
+        });
+      }
+      // A second association's lower qualification must not remove existing access.
+      const awardedLevel = license.isInstructor ? 5 : license.levelOrder;
+      const currentLevel = user.profile?.level;
+      const level = currentLevel?.toUpperCase() === 'A'
+        ? 'A' : String(Math.max(Number(currentLevel) || 0, awardedLevel));
+      await tx.user_profile.upsert({
+        where: { userId: request.userId },
+        create: { userId: request.userId, level }, update: { level },
+      });
+      if (awardedLevel === 5) {
+        const existing = await tx.user_setting.findUnique({
           where: { userId_settingKey: { userId: user.userId, settingKey: 'schedulePublic' } },
         });
-
         if (!existing) {
-          await this.prisma.user_setting.create({
+          await tx.user_setting.create({
             data: { userId: user.userId, settingKey: 'schedulePublic', settingValue: 'Y' },
           });
         } else if (existing.createdAt.getTime() === existing.updatedAt.getTime()) {
-          await this.prisma.user_setting.update({
-            where: { id: existing.id },
-            data: { settingValue: 'Y' },
-          });
+          await tx.user_setting.update({ where: { id: existing.id }, data: { settingValue: 'Y' } });
         }
       }
-    }
-
-    return { success: true };
+      return { success: true };
+    });
   }
 
   async rejectCertRequest(id: number, reason?: string) {

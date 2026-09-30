@@ -27,6 +27,7 @@ it.each(['instructor', 'closeFriend', 'group_7'])('allows a schedule visible thr
   expect(result.schedule?.id).toBe(12);
   expect(result.schedule?.isOwner).toBe(false);
   expect(result.schedule?.participants[0].nickname).toBe('Other');
+  expect(result.schedule?.participants[0].userId).toBe('other');
   expect(result.schedule?.participants[0].profileImage).toBe('https://example.com/other.jpg');
   expect(prisma.schedule.findUnique.mock.calls[0][0].include.participants.include.user.select.profileImage).toBe(true);
   expect(result.schedule?.participants[0].medicalUuid).toBeNull();
