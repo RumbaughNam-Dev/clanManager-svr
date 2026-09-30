@@ -1366,7 +1366,7 @@ export class AllblueService {
           include: {
             user: {
               select: {
-                id: true, nickname: true, userName: true,
+                id: true, nickname: true, userName: true, profileImage: true,
                 profile: { select: { level: true } },
                 licenses: { where: { status: 'IN_PROGRESS' }, select: { id: true }, take: 1 },
               },
@@ -1444,6 +1444,7 @@ export class AllblueService {
               ...invitation,
               id: isGuest ? p.guest!.id : p.user!.id,
               nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
+              profileImage: isGuest ? null : (p.user!.profileImage ?? null),
               name: isGuest ? null : (p.user!.userName ?? null),
               isGuest, categoryCode: p.categoryCode ?? null,
               level: isGuest ? '0' : (p.user!.profile?.level ?? '0'),
@@ -1516,8 +1517,9 @@ export class AllblueService {
 
           return {
             ...invitation,
-              id: isGuest ? p.guest!.id : p.user!.id,
+            id: isGuest ? p.guest!.id : p.user!.id,
             nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
+            profileImage: isGuest ? null : (p.user!.profileImage ?? null),
             name: isGuest ? null : (p.user!.userName ?? null),
             isGuest,
             categoryCode: p.categoryCode ?? null,

@@ -5,7 +5,7 @@ function fixture() {
     id: 12, title: 'Training', instructorId: 'owner', visibility: 'public',
     scheduleDate: new Date('2026-09-14'), categoryCode: 'TRAINING',
     instructor: { nickname: 'Owner' },
-    participants: [{ userId: 'other', user: { id: 3, nickname: 'Other', profile: { level: '2' } }, licenses: [] }],
+    participants: [{ userId: 'other', user: { id: 3, nickname: 'Other', profileImage: 'https://example.com/other.jpg', profile: { level: '2' } }, licenses: [] }],
     formSubmissions: [{ formId: 'medical', participantUserId: 'other', uuid: 'private-document', status: 'submitted' }],
   };
   const prisma = {
@@ -27,6 +27,8 @@ it.each(['instructor', 'closeFriend', 'group_7'])('allows a schedule visible thr
   expect(result.schedule?.id).toBe(12);
   expect(result.schedule?.isOwner).toBe(false);
   expect(result.schedule?.participants[0].nickname).toBe('Other');
+  expect(result.schedule?.participants[0].profileImage).toBe('https://example.com/other.jpg');
+  expect(prisma.schedule.findUnique.mock.calls[0][0].include.participants.include.user.select.profileImage).toBe(true);
   expect(result.schedule?.participants[0].medicalUuid).toBeNull();
   expect(JSON.stringify(result)).not.toContain('private-document');
   const where = prisma.schedule.findFirst.mock.calls[0][0].where;
@@ -61,6 +63,7 @@ it('preserves owner access without a social filter', async () => {
   const { service, prisma } = fixture();
   const result = await service.getScheduleDetail(12, 'owner');
   expect(result.schedule?.isOwner).toBe(true);
+  expect(result.schedule?.participants[0].profileImage).toBe('https://example.com/other.jpg');
   expect(result.schedule?.participants[0].medicalUuid).toBe('private-document');
   expect(prisma.schedule.findFirst).not.toHaveBeenCalled();
 });
