@@ -125,6 +125,7 @@ export class AllblueController {
   @UseGuards(AllblueJwtAuthGuard)
   @Put('profile')
   updateProfile(@Req() req: any, @Body() body: any) {
+    if (req.user.demo && body?.level !== undefined) throw new ForbiddenException('데모 계정의 권한은 변경할 수 없습니다.');
     return this.allblueService.updateProfile(Number(req.user.sub), body);
   }
 
@@ -391,7 +392,7 @@ export class AllblueController {
   @UseGuards(AllblueJwtAuthGuard)
   @Delete('auth/withdraw')
   withdraw(@Req() req: any) {
-    return this.allblueService.withdraw(req.user.userId);
+    return this.allblueService.withdraw(req.user.userId, req.user.demo ? Number(req.user.sub) : undefined);
   }
 
   @UseGuards(AllblueJwtAuthGuard)

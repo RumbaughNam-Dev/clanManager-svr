@@ -2514,31 +2514,43 @@ export class AllblueService {
     return { success: true };
   }
 
-  async withdraw(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { userId } });
-    if (!user) {
-      return { success: false, message: '존재하지 않는 사용자입니다.' };
-    }
-
-    await this.prisma.$transaction([
-      // userId (String FK) 참조 테이블
-      this.prisma.inquiry.deleteMany({ where: { userId } }),
-      this.prisma.friend_group.deleteMany({ where: { userId } }),
-      this.prisma.close_friend.deleteMany({ where: { OR: [{ userId }, { friendId: userId }] } }),
-      this.prisma.blocked_user.deleteMany({ where: { OR: [{ userId }, { blockedId: userId }] } }),
-      this.prisma.dive_buddy.deleteMany({ where: { OR: [{ userId }, { buddyId: userId }] } }),
-      this.prisma.schedule_participant.deleteMany({ where: { userId } }),
-      this.prisma.user_license.deleteMany({ where: { OR: [{ userId }, { instructorId: userId }] } }),
-      // user.id (Int FK) 참조 테이블
-      this.prisma.login_history.deleteMany({ where: { userId: user.id } }),
-      this.prisma.cert_request.deleteMany({ where: { userId: user.id } }),
-      this.prisma.user_license_achievement.deleteMany({ where: { OR: [{ userId: user.id }, { completedBy: user.id }] } }),
-      this.prisma.user_profile.deleteMany({ where: { userId: user.id } }),
-      // user 삭제
-      this.prisma.user.delete({ where: { userId } }),
-    ]);
-
-    return { success: true };
+  async withdraw(userId: string, expectedId?: number) {
+    return this.prisma.$transaction(async (tx) => {
+      // Lock the exact account incarnation so an old request cannot delete a recreated account.
+      const users = expectedId === undefined
+        ? await tx.$queryRaw<Array<{ id: number }>>`SELECT id FROM user WHERE userId = ${userId} FOR UPDATE`
+        : await tx.$queryRaw<Array<{ id: number }>>`SELECT id FROM user WHERE userId = ${userId} AND id = ${expectedId} FOR UPDATE`;
+      const user = users[0];
+      if (!user) return { success: false, message: '존재하지 않는 사용자입니다.' };
+      const schedules = await tx.schedule.findMany({ where: { instructorId: userId }, select: { id: true } });
+      const scheduleIds = schedules.map((s) => s.id);
+      await tx.debriefing.deleteMany({ where: { OR: [{ createdBy: user.id }, { participantId: user.id }, { scheduleId: { in: scheduleIds } }] } });
+      await tx.form_submission.deleteMany({ where: { OR: [{ participantUserId: userId }, { instructorId: user.id }, { scheduleId: { in: scheduleIds } }] } });
+      await tx.form_item.deleteMany({ where: { instructorId: user.id } });
+      await tx.app_notification.deleteMany({ where: { OR: [{ senderId: userId }, { receiverId: userId }, { scheduleId: { in: scheduleIds } }] } });
+      await tx.dive_buddy.deleteMany({ where: { OR: [{ userId }, { buddyId: userId }, { scheduleId: { in: scheduleIds } }] } });
+      await tx.schedule_participant.deleteMany({ where: { OR: [{ userId }, { scheduleId: { in: scheduleIds } }] } });
+      await tx.schedule.deleteMany({ where: { instructorId: userId } });
+      await tx.inquiry.deleteMany({ where: { userId } });
+      await tx.friend_group.deleteMany({ where: { userId } });
+      await tx.friend_group_member.deleteMany({ where: { userId } });
+      await tx.close_friend.deleteMany({ where: { OR: [{ userId }, { friendId: userId }] } });
+      await tx.blocked_user.deleteMany({ where: { OR: [{ userId }, { blockedId: userId }] } });
+      await tx.user_license.deleteMany({ where: { userId } });
+      await tx.user_license.updateMany({ where: { instructorId: userId }, data: { instructorId: null } });
+      await tx.guest_user.updateMany({ where: { linkedUserId: userId }, data: { linkedUserId: null } });
+      await tx.organization.deleteMany({ where: { representativeId: userId } });
+      await tx.login_history.deleteMany({ where: { userId: user.id } });
+      await tx.cert_request.deleteMany({ where: { userId: user.id } });
+      await tx.user_license_achievement.deleteMany({ where: { userId: user.id } });
+      await tx.user_license_achievement.updateMany({ where: { completedBy: user.id }, data: { completedBy: null } });
+      await tx.user_profile.deleteMany({ where: { userId: user.id } });
+      await tx.user_setting.deleteMany({ where: { userId } });
+      await tx.push_token.deleteMany({ where: { userId } });
+      await tx.instructor_register_request.deleteMany({ where: { userId } });
+      await tx.user.delete({ where: { id: user.id } });
+      return { success: true };
+    });
   }
 
   private async checkAdmin(userId: string): Promise<boolean> {
