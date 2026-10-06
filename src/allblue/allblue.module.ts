@@ -1,3 +1,5 @@
+import { TemporaryUserLinkController } from './temporary-user-link.controller';
+import { TemporaryUserLinkService } from './temporary-user-link.service';
 import { DemoAuthController } from './demo-auth.controller';
 import { DemoAuthService } from './demo-auth.service';
 import { Module } from '@nestjs/common';
@@ -8,7 +10,7 @@ import { AllblueS3Service } from './allblue-s3.service';
 import { AllbluePushService } from './allblue-push.service';
 
 @Module({
-  controllers: [AllblueController, DemoAuthController],
-  providers: [DemoAuthService, AllblueService, AllbluePrismaService, AllblueS3Service, AllbluePushService],
+  controllers: [TemporaryUserLinkController, AllblueController, DemoAuthController],
+  providers: [TemporaryUserLinkService, DemoAuthService, AllblueService, AllbluePrismaService, AllblueS3Service, AllbluePushService],
 })
 export class AllblueModule {}

@@ -1,3 +1,4 @@
+import { lockTemporaryUser } from './temporary-user-lock';
 import { Injectable, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AllbluePrismaService } from '../allblue-prisma.service';
@@ -700,7 +701,8 @@ export class AllblueService {
 
   private async assertTemporaryUserAccess(where: { id: number } | { userId: string }, viewerUserId?: string) {
     const target = await this.prisma.user.findUnique({ where,
-      select: { isTemporary: true, temporaryOwner: { select: { userId: true } } } });
+      select: { isTemporary: true, temporaryLinkedAt: true, temporaryOwner: { select: { userId: true } } } });
+    if (target?.temporaryLinkedAt) throw new ConflictException('이미 정식 사용자와 연결되었습니다. 새로고침해주세요.');
     if (target?.isTemporary && (!viewerUserId || target.temporaryOwner?.userId !== viewerUserId)) {
       throw new ForbiddenException('직접 등록한 임시 사용자만 사용할 수 있습니다.');
     }
@@ -713,7 +715,7 @@ export class AllblueService {
 
     const currentUser = await this.prisma.user.findUnique({ where: { id: currentUserId }, select: { userId: true } });
     const users = await this.prisma.user.findMany({
-      where: { AND: [{ OR: [{ nickname: { contains: q.trim() } }, { userName: { contains: q.trim() } }] }, { OR: [{ isTemporary: false }, { temporaryOwnerId: currentUserId }] }] },
+      where: { temporaryLinkedAt: null, AND: [{ OR: [{ nickname: { contains: q.trim() } }, { userName: { contains: q.trim() } }] }, { OR: [{ isTemporary: false }, { temporaryOwnerId: currentUserId }] }] },
       select: { isTemporary: true, id: true, userId: true, nickname: true, userName: true, profileImage: true, phone: true, birthDate: true, profile: { select: { level: true } } },
     });
 
@@ -961,6 +963,7 @@ export class AllblueService {
       p = { ...p, userId: created.id };
     }
 
+    await lockTemporaryUser(tx, { id: p.userId });
     // 앱 사용자 참가자
     const user = await tx.user.findUnique({
       where: { id: p.userId },
@@ -1386,6 +1389,7 @@ export class AllblueService {
           include: {
             user: {
               select: {
+                temporaryLinkedAt: true, temporaryOwner: { select: { userId: true } },
                 isTemporary: true, id: true, nickname: true, userName: true, profileImage: true,
                 profile: { select: { level: true } },
                 licenses: { where: { status: 'IN_PROGRESS' }, select: { id: true }, take: 1 },
@@ -1458,6 +1462,7 @@ export class AllblueService {
         instructorName: schedule.instructor.nickname,
         participants: await Promise.all(schedule.participants.filter(p => p.invitationStatus !== 'removed' && (isOwner || p.invitationStatus !== 'rejected')).map(async p => {
           const invitation = {
+            canLinkTemporary: isOwner && !!p.user?.isTemporary && !p.user.temporaryLinkedAt && p.user.temporaryOwner?.userId === userId,
             isTemporary: p.user?.isTemporary ?? false,
             invitationStatus: p.invitationStatus,
             invitationToken: p.userId === userId ? p.invitationToken : null,
@@ -1849,6 +1854,13 @@ export class AllblueService {
   }
 
   async toggleAchievement(body: { requirementId: number; userId: number; completed: boolean }, currentUserId: number) {
+    return this.prisma.$transaction(async tx => {
+      await lockTemporaryUser(tx, { id: body.userId });
+      return this.toggleAchievementInTransaction(body, currentUserId, tx);
+    });
+  }
+
+  private async toggleAchievementInTransaction(body: { requirementId: number; userId: number; completed: boolean }, currentUserId: number, tx: any) {
     const { requirementId, userId, completed } = body;
 
     if (!requirementId || !userId) {
@@ -1857,13 +1869,13 @@ export class AllblueService {
 
     await this.assertDivingLogAccess(currentUserId, userId, false);
 
-    const existing = await this.prisma.user_license_achievement.findUnique({
+    const existing = await tx.user_license_achievement.findUnique({
       where: { userId_requirementId: { userId, requirementId } },
     });
 
     if (completed) {
       // 통과처리 - 강사/관리자 여부 확인 (user_profile.level)
-      const currentUser = await this.prisma.user.findUnique({
+      const currentUser = await tx.user.findUnique({
         where: { id: currentUserId },
         select: { profile: { select: { level: true } } },
       });
@@ -1873,12 +1885,12 @@ export class AllblueService {
       }
 
       if (existing) {
-        await this.prisma.user_license_achievement.update({
+        await tx.user_license_achievement.update({
           where: { id: existing.id },
           data: { isCompleted: 1, completedAt: new Date(), completedBy: currentUserId },
         });
       } else {
-        await this.prisma.user_license_achievement.create({
+        await tx.user_license_achievement.create({
           data: { userId, requirementId, isCompleted: 1, completedAt: new Date(), completedBy: currentUserId },
         });
       }
@@ -1891,7 +1903,7 @@ export class AllblueService {
       if (existing.completedBy !== currentUserId) {
         return { success: false, message: '과제를 통과시킨 강사 본인만 취소 처리 할 수 있어요.' };
       }
-      await this.prisma.user_license_achievement.update({
+      await tx.user_license_achievement.update({
         where: { id: existing.id },
         data: { isCompleted: 0, completedAt: null, completedBy: null },
       });
@@ -2175,22 +2187,25 @@ export class AllblueService {
       resolvedFriendId = friend.userId;
     }
 
+    return this.prisma.$transaction(async tx => {
+      await lockTemporaryUser(tx, { userId: resolvedFriendId });
     await this.assertTemporaryUserAccess({ userId: resolvedFriendId }, userId);
     if (userId === resolvedFriendId) {
       return { success: false, message: '자기 자신을 추가할 수 없습니다.' };
     }
 
-    const existing = await this.prisma.close_friend.findUnique({
+    const existing = await tx.close_friend.findUnique({
       where: { userId_friendId: { userId, friendId: resolvedFriendId } },
     });
     if (existing) {
       return { success: false, message: '이미 친한친구입니다.' };
     }
 
-    await this.prisma.close_friend.create({
+    await tx.close_friend.create({
       data: { userId, friendId: resolvedFriendId },
     });
     return { success: true };
+    });
   }
 
   async removeCloseFriend(userId: string, friendId: string) {
@@ -2248,6 +2263,13 @@ export class AllblueService {
   }
 
   async blockUser(userId: string, blockedId: string) {
+    return this.prisma.$transaction(async tx => {
+      await lockTemporaryUser(tx, { userId: blockedId });
+      return this.blockUserInTransaction(userId, blockedId, tx);
+    });
+  }
+
+  private async blockUserInTransaction(userId: string, blockedId: string, tx: any) {
     await this.assertTemporaryUserAccess({ userId: blockedId }, userId);
     if (!blockedId?.trim()) {
       return { success: false, message: 'blockedId는 필수입니다.' };
@@ -2256,19 +2278,19 @@ export class AllblueService {
       return { success: false, message: '자기 자신을 차단할 수 없습니다.' };
     }
 
-    const existing = await this.prisma.blocked_user.findUnique({
+    const existing = await tx.blocked_user.findUnique({
       where: { userId_blockedId: { userId, blockedId } },
     });
     if (existing) {
       return { success: false, message: '이미 차단된 유저입니다.' };
     }
 
-    await this.prisma.blocked_user.create({
+    await tx.blocked_user.create({
       data: { userId, blockedId },
     });
 
     // 친한친구에서도 제거
-    await this.prisma.close_friend.deleteMany({
+    await tx.close_friend.deleteMany({
       where: { userId, friendId: blockedId },
     });
     return { success: true };
@@ -2282,15 +2304,22 @@ export class AllblueService {
   }
 
   async createDebriefing(body: { scheduleId: number; participantId: number; content: string }, createdBy: number) {
+    return this.prisma.$transaction(async tx => {
+      await lockTemporaryUser(tx, { id: body.participantId });
+      return this.createDebriefingInTransaction(body, createdBy, tx);
+    });
+  }
+
+  private async createDebriefingInTransaction(body: { scheduleId: number; participantId: number; content: string }, createdBy: number, tx: any) {
     const { scheduleId, participantId, content } = body;
 
     if (!scheduleId || !participantId) {
       return { success: false, message: '필수 항목을 입력해주세요.' };
     }
 
-    const author = await this.prisma.user.findUnique({ where: { id: createdBy }, select: { userId: true, profile: { select: { level: true } } } });
+    const author = await tx.user.findUnique({ where: { id: createdBy }, select: { userId: true, profile: { select: { level: true } } } });
     if (author) await this.assertTemporaryUserAccess({ id: participantId }, author.userId);
-    const participant = await this.prisma.schedule_participant.findFirst({
+    const participant = await tx.schedule_participant.findFirst({
       where: { scheduleId, invitationStatus: 'accepted', user: { id: participantId } }, include: { schedule: true },
     });
     if (!author || !['5', 'A'].includes(String(author.profile?.level).toUpperCase()) || !participant || participant.schedule.instructorId !== author.userId ||
@@ -2298,7 +2327,7 @@ export class AllblueService {
       throw new ForbiddenException('수락한 교육생의 디브리핑만 작성할 수 있습니다.');
     }
 
-    await this.prisma.debriefing.create({
+    await tx.debriefing.create({
       data: {
         scheduleId,
         participantId,
@@ -2374,17 +2403,24 @@ export class AllblueService {
   }
 
   async addFriendGroupMember(groupId: number, memberUserId: string, ownerUserId: string) {
+    return this.prisma.$transaction(async tx => {
+      await lockTemporaryUser(tx, { userId: memberUserId });
+      return this.addFriendGroupMemberInTransaction(groupId, memberUserId, ownerUserId, tx);
+    });
+  }
+
+  private async addFriendGroupMemberInTransaction(groupId: number, memberUserId: string, ownerUserId: string, tx: any) {
     await this.assertTemporaryUserAccess({ userId: memberUserId }, ownerUserId);
-    const group = await this.prisma.friend_group.findUnique({ where: { id: groupId } });
+    const group = await tx.friend_group.findUnique({ where: { id: groupId } });
     if (!group) return { success: false, message: '존재하지 않는 그룹입니다.' };
     if (group.userId !== ownerUserId) return { success: false, message: '권한이 없습니다.' };
 
-    const existing = await this.prisma.friend_group_member.findUnique({
+    const existing = await tx.friend_group_member.findUnique({
       where: { groupId_userId: { groupId, userId: memberUserId } },
     });
     if (existing) return { success: true };
 
-    await this.prisma.friend_group_member.create({
+    await tx.friend_group_member.create({
       data: { groupId, userId: memberUserId },
     });
 

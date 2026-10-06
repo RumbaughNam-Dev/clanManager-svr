@@ -19,6 +19,8 @@ function fixture() {
     debriefing: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     dive_buddy: { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn() },
   };
+  prisma.$queryRaw = jest.fn().mockResolvedValue([]);
+  prisma.$transaction = async fn => fn(prisma);
   const service: any = Object.assign(Object.create(AllblueService.prototype), { prisma });
   return { service, prisma };
 }

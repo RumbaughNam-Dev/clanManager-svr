@@ -12,6 +12,8 @@ model user {
   id           Int             @id @default(autoincrement())
   userId       String          @unique(map: "uk_userId") @db.VarChar(50)
   isTemporary Boolean @default(false) @map("is_temporary")
+  temporaryLinkedAt DateTime? @map("temporary_linked_at")
+  temporaryLinkedToId Int? @map("temporary_linked_to_id")
   temporaryOwnerId Int? @map("temporary_owner_id")
   temporaryOwner user? @relation("temporary_owner", fields: [temporaryOwnerId], references: [id], onDelete: SetNull, map: "fk_user_temporary_owner")
   temporaryUsers user[] @relation("temporary_owner")
@@ -533,4 +535,32 @@ model app_notification {
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime @default(now()) @map("created_at")
   @@index([receiverId, deletedAt, readAt, id], map: "idx_notification_inbox")
+}
+
+// Audit identities intentionally have no user FK: deletion must not erase provenance.
+model temporary_user_link_audit {
+  id Int @id @default(autoincrement()) @db.UnsignedInt
+  sourceId Int @unique @map("source_id")
+  targetId Int @map("target_id")
+  actorId Int @map("actor_id")
+  sourceUserId String @map("source_user_id") @db.VarChar(50)
+  targetUserId String @map("target_user_id") @db.VarChar(50)
+  actorUserId String @map("actor_user_id") @db.VarChar(50)
+  sourceName String @map("source_name") @db.VarChar(50)
+  targetName String @map("target_name") @db.VarChar(50)
+  actorName String @map("actor_name") @db.VarChar(50)
+  originScheduleId Int @map("origin_schedule_id") @db.UnsignedInt
+  details Json
+  createdAt DateTime @default(now()) @map("created_at")
+  schedules temporary_user_link_schedule[]
+  @@index([actorId, createdAt])
+  @@index([targetId, createdAt])
+}
+
+model temporary_user_link_schedule {
+  auditId Int @map("audit_id") @db.UnsignedInt
+  scheduleId Int @map("schedule_id") @db.UnsignedInt
+  audit temporary_user_link_audit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  @@id([auditId, scheduleId])
+  @@index([scheduleId])
 }
