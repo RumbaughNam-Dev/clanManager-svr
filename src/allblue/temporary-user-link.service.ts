@@ -157,30 +157,6 @@ export class TemporaryUserLinkService {
     }
   }
 
-  async history(scheduleId: number, actorId: number) {
-    this.validIds(scheduleId, actorId);
-    const items = await this.prisma.temporary_user_link_audit.findMany({ where: {
-      schedules: { some: { scheduleId } }, OR: [{ actorId }, { targetId: actorId }],
-    }, orderBy: { id: 'desc' }, take: 100 });
-    return { items: items.map(item => ({ ...item, details: publicAuditDetails(item.details,
-      item.actorId === actorId ? item.actorUserId : item.targetUserId), createdAt: item.createdAt.toISOString() })) };
-  }
-}
-
-// The database keeps restoration snapshots. The API exposes record changes only,
-// never another person's contact memo, invitation token or private document data.
-export function publicAuditDetails(details: any, viewerUserId?: string) {
-  const allowed = new Set(['id', 'userId', 'friendId', 'buddyId', 'blockedId', 'groupId', 'scheduleId',
-    'participantId', 'participantUserId', 'scheduleParticipantId', 'userLicenseId', 'licenseId', 'requirementId',
-    'instructorId', 'createdBy', 'categoryCode', 'invitationStatus', 'respondedAt', 'status', 'isCompleted',
-    'completedBy', 'certificateNumber', 'startedAt', 'completedAt', 'lastDiveDate', 'createdAt', 'updatedAt']);
-  const safeRow = (row: any) => row == null ? null : Object.fromEntries(Object.entries(row).filter(([key]) => allowed.has(key)));
-  return { version: details.version, duplicates: details.duplicates, changes: details.changes.map((change: LinkChange) => {
-    const privateRelation = ['close_friend', 'dive_buddy', 'blocked_user', 'friend_group_member'].includes(change.table);
-    const ownRelation = change.before?.userId === viewerUserId && change.table !== 'friend_group_member';
-    const row = (value: any) => privateRelation && !ownRelation ? (value == null ? null : { id: change.id }) : safeRow(value);
-    return { table: change.table, action: change.action, id: change.id, before: row(change.before), after: row(change.after) };
-  }) };
 }
 
 type LinkData = Awaited<ReturnType<TemporaryUserLinkService['collect']>>;

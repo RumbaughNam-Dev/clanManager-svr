@@ -106,16 +106,9 @@ async function run() {
   assert.ok(audit.details.changes.some(c => c.table === 'close_friend' && c.before.memo === 'source-private'));
   assert.ok(!JSON.stringify(audit).includes('UPDATED PRIVATE CONTENT'));
   assert.ok(!JSON.stringify(audit).includes('ORIGINAL_SIGNATURE'));
-  for (const viewer of [actor, target]) {
-    const history = await links.history(first.id, viewer.id);
-    assert.equal(history.items.length, 1);
-    assert.ok(!JSON.stringify(history).includes('source-private'));
-    assert.ok(!JSON.stringify(history).includes('existing-token'));
-    assert.equal((await links.history(duplicate.id, viewer.id)).items.length, 1);
-  }
-  const targetHistory = await links.history(first.id, target.id);
-  assert.ok(!JSON.stringify(targetHistory.items[0].details.changes.filter(c => c.table === 'blocked_user')).includes(stranger.userId));
-  assert.equal((await links.history(first.id, stranger.id)).items.length, 0);
+  const auditSchedules = await db.temporary_user_link_schedule.findMany({ where: { auditId: audit.id }, orderBy: { scheduleId: 'asc' } });
+  assert.deepEqual(auditSchedules.map(row => row.scheduleId), [first.id, duplicate.id]);
+  assert.equal(typeof links.history, 'undefined', 'audit data is not available through the app service');
   assert.equal((await commit(first, source, target, actor, confirmed)).auditId, result.auditId);
   assert.equal(await db.temporary_user_link_audit.count({ where: { sourceId: source.id } }), 1);
   assert.equal((await db.user.findUnique({ where: { id: source.id } })).temporaryLinkedToId, target.id);
@@ -125,7 +118,7 @@ async function run() {
   assert.equal(detail.schedule.id, first.id);
   const debriefs = await app.getUserDebriefings(target.id, 1, 20, target.id);
   assert.ok(JSON.stringify(debriefs).includes('UPDATED PRIVATE CONTENT'));
-  passed('auditable authorized history, private fields hidden, idempotence, source disabled and member reads');
+  passed('operator audit persistence, no app history API, idempotence, source disabled and member reads');
 
   const rollbackSource = await user('rollback', { isTemporary: true, temporaryOwnerId: actor.id });
   const rollbackSchedule = await schedule(actor, 'rollback');

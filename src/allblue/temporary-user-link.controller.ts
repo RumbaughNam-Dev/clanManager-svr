@@ -22,8 +22,4 @@ export class TemporaryUserLinkController {
     return this.service.link(Number(schedule), Number(source), body.targetId, Number(req.user.sub), body.confirmationToken);
   }
 
-  @Get('schedule/:scheduleId/temporary-user-links')
-  history(@Param('scheduleId') schedule: string, @Req() req: any) {
-    return this.service.history(Number(schedule), Number(req.user.sub));
-  }
 }

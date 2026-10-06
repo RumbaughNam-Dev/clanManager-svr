@@ -1,4 +1,6 @@
-import { buildLinkPlan, maskLinkPhone, publicAuditDetails, TemporaryUserLinkService } from './temporary-user-link.service';
+import { TemporaryUserLinkController } from './temporary-user-link.controller';
+import { PATH_METADATA } from '@nestjs/common/constants';
+import { buildLinkPlan, maskLinkPhone, TemporaryUserLinkService } from './temporary-user-link.service';
 import { lockTemporaryUser } from './temporary-user-lock';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import jwt from 'jsonwebtoken';
@@ -10,15 +12,15 @@ function data(): any {
 const course = (id: number, userId: string, overrides: any = {}) => ({ id, userId, licenseId: 10, instructorId: 'teacher', certificateNumber: null,
   status: 'IN_PROGRESS', startedAt: null, completedAt: null, ...overrides });
 
-it('keeps private restoration snapshots out of the history API', () => {
-  const details = publicAuditDetails({ version: 1, duplicates: {}, sourceBefore: { nickname: 'source' }, changes: [
-    { table: 'close_friend', action: 'update', id: 1, before: { userId: 'teacher', friendId: 'temp', memo: 'private' }, after: { userId: 'teacher', friendId: 'member', memo: 'private' } },
-    { table: 'schedule_participant', action: 'delete', id: 2, before: { id: 2, invitationToken: 'secret', categoryCode: 'TRAINING' }, after: null },
-  ] }, 'teacher');
-  expect(details.changes[0].before).toEqual({ userId: 'teacher', friendId: 'temp' });
-  expect(details.changes[1].before).toEqual({ id: 2, categoryCode: 'TRAINING' });
-  expect(details.changes[1].after).toBeNull();
-  expect(details).not.toHaveProperty('sourceBefore');
+it('exposes only candidate, preview and link routes; audits have no app endpoint', () => {
+  const prototype = TemporaryUserLinkController.prototype;
+  const routes = Object.getOwnPropertyNames(prototype).filter(key => key !== 'constructor')
+    .map(key => Reflect.getMetadata(PATH_METADATA, prototype[key]));
+  expect(routes).toEqual([
+    'schedule/:scheduleId/temporary-users/:sourceId/link-targets',
+    'schedule/:scheduleId/temporary-users/:sourceId/link-preview',
+    'schedule/:scheduleId/temporary-users/:sourceId/link',
+  ]);
 });
 
 it('moves all nonduplicate records using both string and numeric identity keys', () => {
