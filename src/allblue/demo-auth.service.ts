@@ -52,7 +52,7 @@ export class DemoAuthService {
         user = await this.prisma.user.findUnique({ where: { userId }, include: { profile: true } });
       }
     }
-    if (!user || user.status !== 'approved' || !['user', 'instructor'].includes(user.userType) || user.profile?.level === 'A' || user.kakaoId || user.googleId || user.naverId || user.appleId) {
+    if (!user || user.isTemporary || user.status !== 'approved' || !['user', 'instructor'].includes(user.userType) || user.profile?.level === 'A' || user.kakaoId || user.googleId || user.naverId || user.appleId) {
       throw new ServiceUnavailableException('데모 계정을 사용할 수 없습니다.');
     }
     const token = jwt.sign({ sub: String(user.id), userId: user.userId, userType: user.userType, demo: true }, secret, { expiresIn: '24h' });

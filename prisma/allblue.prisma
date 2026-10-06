@@ -11,6 +11,11 @@ datasource db {
 model user {
   id           Int             @id @default(autoincrement())
   userId       String          @unique(map: "uk_userId") @db.VarChar(50)
+  isTemporary Boolean @default(false) @map("is_temporary")
+  temporaryOwnerId Int? @map("temporary_owner_id")
+  temporaryOwner user? @relation("temporary_owner", fields: [temporaryOwnerId], references: [id], onDelete: SetNull, map: "fk_user_temporary_owner")
+  temporaryUsers user[] @relation("temporary_owner")
+  @@index([temporaryOwnerId, isTemporary], map: "idx_user_temporary_owner")
   password     String          @db.VarChar(255)
   userName     String?         @db.VarChar(50)
   nickname     String          @db.VarChar(50)
@@ -42,10 +47,10 @@ model user {
   participations          schedule_participant[]
   achievements            user_license_achievement[] @relation("achievement_user")
   instructedAchievements  user_license_achievement[] @relation("achievement_instructor")
-  linkedGuests            guest_user[]
   formParticipations      form_submission[]          @relation("form_participant_user")
   licenses                user_license[]             @relation("ul_user")
   instructedLicenses      user_license[]             @relation("ul_instructor")
+  receivedDebriefings      debriefing[]               @relation("debriefing_participant")
   debriefings             debriefing[]               @relation("debriefing_creator")
   closeFriendOf           close_friend[]             @relation("cf_friend")
   settings                user_setting[]
@@ -146,16 +151,13 @@ model form_submission {
   scheduleId          Int?     @map("schedule_id")
   licenseId           Int?     @map("license_id")
   participantUserId   String?  @map("participant_user_id") @db.VarChar(50)
-  participantGuestId  Int?     @map("participant_guest_id")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   schedule           schedule?   @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   participantUser    user?       @relation("form_participant_user", fields: [participantUserId], references: [userId])
-  participantGuest   guest_user? @relation(fields: [participantGuestId], references: [id])
 
   @@index([instructorId])
   @@index([scheduleId, participantUserId, formId], map: "idx_fs_schedule_user")
-  @@index([scheduleId, participantGuestId, formId], map: "idx_fs_schedule_guest")
 }
 
 model cert_request {
@@ -218,7 +220,6 @@ model schedule_participant {
   id           Int         @id @default(autoincrement()) @db.UnsignedInt
   scheduleId   Int         @map("schedule_id") @db.UnsignedInt
   userId       String?     @map("user_id") @db.VarChar(50)
-  guestId      Int?        @map("guest_id")
   invitationStatus String @default("accepted") @map("invitation_status") @db.VarChar(20)
   invitationToken String? @map("invitation_token") @db.VarChar(36)
   respondedAt DateTime? @map("responded_at")
@@ -226,7 +227,6 @@ model schedule_participant {
   createdAt    DateTime    @default(now()) @map("created_at")
   schedule     schedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   user         user?       @relation(fields: [userId], references: [userId])
-  guest        guest_user? @relation(fields: [guestId], references: [id])
   licenses     schedule_participant_license[]
 
   @@unique([scheduleId, userId], map: "uk_schedule_user")
@@ -242,17 +242,6 @@ model schedule_participant_license {
 
   @@unique([scheduleParticipantId, userLicenseId], map: "uk_spl")
   @@map("schedule_participant_license")
-}
-
-model guest_user {
-  id           Int                    @id @default(autoincrement())
-  nickname     String                 @db.VarChar(50)
-  phone        String?                @db.VarChar(20)
-  linkedUserId String?                @map("linked_user_id") @db.VarChar(50)
-  createdAt    DateTime               @default(now()) @map("created_at")
-  linkedUser       user?                  @relation(fields: [linkedUserId], references: [userId])
-  participants     schedule_participant[]
-  formSubmissions  form_submission[]
 }
 
 model user_license_achievement {
@@ -368,6 +357,7 @@ model debriefing {
   id            Int      @id @default(autoincrement()) @db.UnsignedInt
   scheduleId    Int      @map("schedule_id") @db.UnsignedInt
   participantId Int      @map("participant_id")
+  participant   user     @relation("debriefing_participant", fields: [participantId], references: [id], onDelete: Restrict, map: "fk_debriefing_participant_user")
   content       String   @db.Text
   createdBy     Int      @map("created_by")
   createdAt     DateTime @default(now()) @map("created_at")

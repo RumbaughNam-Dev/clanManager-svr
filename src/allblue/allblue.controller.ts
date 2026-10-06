@@ -155,6 +155,12 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Post('users/temporary')
+  createTemporaryUser(@Body() body: { name?: unknown }, @Req() req: any) {
+    return this.allblueService.createTemporaryUser(body.name, Number(req.user.sub));
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Get('users/search')
   searchUsers(@Query('q') q: string, @Req() req: any) {
     return this.allblueService.searchUsers(q, Number(req.user.sub));
@@ -162,14 +168,14 @@ export class AllblueController {
 
   @UseGuards(AllblueJwtAuthGuard)
   @Get('user/:userId/in-progress-licenses')
-  getInProgressLicenses(@Param('userId') userId: string) {
-    return this.allblueService.getInProgressLicenses(Number(userId));
+  getInProgressLicenses(@Param('userId') userId: string, @Req() req: any) {
+    return this.allblueService.getInProgressLicenses(Number(userId), req.user.userId);
   }
 
   @UseGuards(AllblueJwtAuthGuard)
   @Get('licenses/available')
-  getAvailableLicenses(@Query('userId') userId: string, @Query('associationId') associationId: string) {
-    return this.allblueService.getAvailableLicenses(Number(userId), Number(associationId));
+  getAvailableLicenses(@Query('userId') userId: string, @Query('associationId') associationId: string, @Req() req: any) {
+    return this.allblueService.getAvailableLicenses(Number(userId), Number(associationId), req.user.userId);
   }
 
   @UseGuards(AllblueJwtAuthGuard)

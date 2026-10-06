@@ -37,7 +37,7 @@ export class AllblueService {
       where: { userId },
     });
 
-    if (!user) {
+    if (!user || user.isTemporary) {
       return { success: false, message: '아이디 또는 비밀번호가 올바르지 않습니다' };
     }
 
@@ -453,7 +453,7 @@ export class AllblueService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
-        id: true, nickname: true, userName: true, profileImage: true, profile: true,
+        isTemporary: true, id: true, nickname: true, userName: true, profileImage: true, profile: true,
         userId: true, organizationStatus: true,
         licenses: {
           where: { status: 'COMPLETED' },
@@ -487,6 +487,7 @@ export class AllblueService {
 
     return {
       user: {
+        isTemporary: user.isTemporary,
         id: user.id,
         nickname: user.nickname,
         name: user.userName ?? null,
@@ -508,6 +509,7 @@ export class AllblueService {
   }
 
   async getProfileByUserId(userId: string, currentUserId: string) {
+    await this.assertTemporaryUserAccess({ userId }, currentUserId);
     const user = await this.prisma.user.findUnique({
       where: { userId },
       select: { id: true },
@@ -678,20 +680,47 @@ export class AllblueService {
     return { pools };
   }
 
+  private temporaryUserData(name: unknown, ownerId: number) {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 50) {
+      throw new BadRequestException('이름을 1~50자로 입력해주세요.');
+    }
+    return {
+      userId: `temporary_${randomUUID()}`, password: 'NO_LOGIN',
+      nickname: name.trim(), userName: name.trim(), status: 'approved',
+      isTemporary: true, temporaryOwnerId: ownerId,
+      profile: { create: { level: '0' } },
+    };
+  }
+
+  async createTemporaryUser(name: unknown, ownerId: number) {
+    const user = await this.prisma.user.create({ data: this.temporaryUserData(name, ownerId) });
+    return { user: { id: user.id, userId: user.userId, nickname: user.nickname,
+      isTemporary: true, phone: '', level: '0' } };
+  }
+
+  private async assertTemporaryUserAccess(where: { id: number } | { userId: string }, viewerUserId?: string) {
+    const target = await this.prisma.user.findUnique({ where,
+      select: { isTemporary: true, temporaryOwner: { select: { userId: true } } } });
+    if (target?.isTemporary && (!viewerUserId || target.temporaryOwner?.userId !== viewerUserId)) {
+      throw new ForbiddenException('직접 등록한 임시 사용자만 사용할 수 있습니다.');
+    }
+  }
+
   async searchUsers(q: string, currentUserId: number) {
     if (!q?.trim()) {
       return { users: [] };
     }
 
+    const currentUser = await this.prisma.user.findUnique({ where: { id: currentUserId }, select: { userId: true } });
     const users = await this.prisma.user.findMany({
-      where: { OR: [{ nickname: { contains: q.trim() } }, { userName: { contains: q.trim() } }] },
-      select: { id: true, userId: true, nickname: true, userName: true, profileImage: true, phone: true, birthDate: true, profile: { select: { level: true } } },
+      where: { AND: [{ OR: [{ nickname: { contains: q.trim() } }, { userName: { contains: q.trim() } }] }, { OR: [{ isTemporary: false }, { temporaryOwnerId: currentUserId }] }] },
+      select: { isTemporary: true, id: true, userId: true, nickname: true, userName: true, profileImage: true, phone: true, birthDate: true, profile: { select: { level: true } } },
     });
 
     // 현재 강사의 교육생(참가자로 등록된 적 있는 유저)을 최상단
     const myStudentIds = await this.prisma.schedule_participant.findMany({
       where: {
-        schedule: { instructorId: users.find(u => u.id === currentUserId)?.userId ?? '' },
+        schedule: { instructorId: currentUser?.userId ?? '' },
         userId: { in: users.map(u => u.userId) },
       },
       select: { userId: true },
@@ -707,7 +736,7 @@ export class AllblueService {
     });
 
     return {
-      users: sorted.map(u => ({ id: u.id, userId: u.userId, nickname: u.nickname, profileImage: u.profileImage ?? null, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? '0' })),
+      users: sorted.map(u => ({ isTemporary: u.isTemporary, id: u.id, userId: u.userId, nickname: u.nickname, profileImage: u.profileImage ?? null, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? '0' })),
     };
   }
 
@@ -812,7 +841,8 @@ export class AllblueService {
     return { success: true };
   }
 
-  async getInProgressLicenses(userIntId: number) {
+  async getInProgressLicenses(userIntId: number, viewerUserId?: string) {
+    await this.assertTemporaryUserAccess({ id: userIntId }, viewerUserId);
     const user = await this.prisma.user.findUnique({
       where: { id: userIntId },
       select: { userId: true },
@@ -845,7 +875,8 @@ export class AllblueService {
     };
   }
 
-  async getAvailableLicenses(userIntId: number, associationId: number) {
+  async getAvailableLicenses(userIntId: number, associationId: number, viewerUserId?: string) {
+    await this.assertTemporaryUserAccess({ id: userIntId }, viewerUserId);
     const user = await this.prisma.user.findUnique({
       where: { id: userIntId },
       select: { userId: true },
@@ -924,40 +955,27 @@ export class AllblueService {
     previous?: { id: number; invitationStatus: string; invitationToken: string | null; respondedAt: Date | null },
   ) {
     const newInvitation = !previous || previous.invitationStatus === 'removed';
+    // Older clients can still send a name; create the same unified identity.
     if (p.guestNickname) {
-      // 게스트 참가자
-      const guest = await tx.guest_user.create({
-        data: { nickname: p.guestNickname.trim(), phone: p.guestPhone?.trim() || null },
-      });
-      await tx.schedule_participant.create({
-        data: { scheduleId, guestId: guest.id, categoryCode: p.categoryCode ?? null },
-      });
-      await tx.form_submission.createMany({
-        data: ['liability', 'medical'].map(formId => ({
-          uuid: randomUUID(),
-          formId,
-          diverName: guest.nickname,
-          instructorId: instructorIntId,
-          instructorName: instructorNickname,
-          scheduleId,
-          participantGuestId: guest.id,
-        })),
-      });
-      return;
+      const created = await tx.user.create({ data: this.temporaryUserData(p.guestNickname, instructorIntId) });
+      p = { ...p, userId: created.id };
     }
 
     // 앱 사용자 참가자
     const user = await tx.user.findUnique({
       where: { id: p.userId },
-      select: { userId: true, nickname: true, userName: true },
+      select: { userId: true, nickname: true, userName: true, isTemporary: true, temporaryOwnerId: true },
     });
-    if (!user) return;
+    if (!user) throw new BadRequestException('참가자를 찾을 수 없습니다.');
+    if (user.isTemporary && user.temporaryOwnerId !== instructorIntId) {
+      throw new ForbiddenException('직접 등록한 임시 사용자만 추가할 수 있습니다.');
+    }
 
     const participantData = {
       scheduleId, userId: user.userId, categoryCode: p.categoryCode ?? scheduleCategoryCode,
       ...(newInvitation ? {
-        invitationStatus: user.userId === instructorUserId ? 'accepted' : 'pending',
-        invitationToken: randomUUID(), respondedAt: null,
+        invitationStatus: user.isTemporary || user.userId === instructorUserId ? 'accepted' : 'pending',
+        invitationToken: user.isTemporary ? null : randomUUID(), respondedAt: null,
       } : {}),
     };
     // Keep the row and invitation token during edits, including concurrent replies.
@@ -965,7 +983,7 @@ export class AllblueService {
       ? await tx.schedule_participant.update({ where: { id: previous.id }, data: participantData })
       : await tx.schedule_participant.create({ data: participantData });
     if (previous) await tx.schedule_participant_license.deleteMany({ where: { scheduleParticipantId: participant.id } });
-    if (newInvitation && user.userId !== instructorUserId) {
+    if (newInvitation && !user.isTemporary && user.userId !== instructorUserId) {
       const notification = await this.queueScheduleInvitation(tx, scheduleId, instructorUserId, user.userId, participant.invitationToken);
       notificationIds.push(notification.id);
     }
@@ -989,6 +1007,10 @@ export class AllblueService {
 
     // schedule_participant_license 연결
     if (allUserLicenseIds.length > 0) {
+      const owned = await tx.user_license.findMany({ where: { id: { in: allUserLicenseIds }, userId: user.userId }, select: { id: true } });
+      if (new Set(owned.map(l => l.id)).size !== new Set(allUserLicenseIds).size) {
+        throw new BadRequestException('참가자의 자격증 과정만 선택할 수 있습니다.');
+      }
       await tx.schedule_participant_license.createMany({
         data: allUserLicenseIds.map((ulId: number) => ({
           scheduleParticipantId: participant.id,
@@ -1105,7 +1127,7 @@ export class AllblueService {
         if (guests?.length > 0) {
           for (const g of guests) {
             if (!g.nickname?.trim()) continue;
-            await this.processParticipant(tx, schedule.id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds);
+            await this.processParticipant(tx, schedule.id, { guestNickname: g.nickname, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds);
           }
         }
       }
@@ -1144,7 +1166,7 @@ export class AllblueService {
       include: {
         pool: { select: { name: true } },
         instructor: { select: { nickname: true, userName: true } },
-        participants: { include: { user: { select: { nickname: true, userName: true, profile: { select: { level: true } } } }, guest: { select: { nickname: true } } } },
+        participants: { include: { user: { select: { isTemporary: true, nickname: true, userName: true, profile: { select: { level: true } } } } } },
       },
     });
 
@@ -1170,10 +1192,11 @@ export class AllblueService {
         instructorName: s.instructor.nickname,
         invitationStatus: s.participants.find(p => p.userId === userId)?.invitationStatus ?? null,
           participantCount: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).length,
-        participantNames: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
+        participantNames: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => p.user?.nickname ?? ''),
         participants: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => ({
           userId: p.userId ?? null,
-          nickname: p.user?.nickname ?? p.guest?.nickname ?? '',
+          isTemporary: p.user?.isTemporary ?? false,
+          nickname: p.user?.nickname ?? '',
           name: p.user?.userName ?? null,
           level: p.user?.profile?.level ?? null,
         })),
@@ -1294,7 +1317,7 @@ export class AllblueService {
       include: {
         pool: { select: { name: true } },
         instructor: { select: { nickname: true, userName: true, profile: { select: { level: true } } } },
-        participants: { include: { user: { select: { nickname: true, userName: true, profile: { select: { level: true } } } }, guest: { select: { nickname: true } } } },
+        participants: { include: { user: { select: { isTemporary: true, nickname: true, userName: true, profile: { select: { level: true } } } } } },
       },
     });
 
@@ -1335,10 +1358,11 @@ export class AllblueService {
           instructorName: s.instructor.nickname,
           invitationStatus: s.participants.find(p => p.userId === userId)?.invitationStatus ?? null,
           participantCount: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).length,
-          participantNames: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => p.user?.nickname ?? p.guest?.nickname ?? ''),
+          participantNames: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => p.user?.nickname ?? ''),
           participants: s.participants.filter(p => !['rejected', 'removed'].includes(p.invitationStatus)).map(p => ({
             userId: p.userId ?? null,
-            nickname: p.user?.nickname ?? p.guest?.nickname ?? '',
+            isTemporary: p.user?.isTemporary ?? false,
+          nickname: p.user?.nickname ?? '',
             name: p.user?.userName ?? null,
             level: p.user?.profile?.level ?? null,
           })),
@@ -1362,12 +1386,11 @@ export class AllblueService {
           include: {
             user: {
               select: {
-                id: true, nickname: true, userName: true, profileImage: true,
+                isTemporary: true, id: true, nickname: true, userName: true, profileImage: true,
                 profile: { select: { level: true } },
                 licenses: { where: { status: 'IN_PROGRESS' }, select: { id: true }, take: 1 },
               },
             },
-            guest: { select: { id: true, nickname: true } },
             licenses: {
               include: {
                 userLicense: {
@@ -1378,7 +1401,7 @@ export class AllblueService {
           },
         },
         formSubmissions: {
-          select: { formId: true, uuid: true, status: true, participantUserId: true, participantGuestId: true },
+          select: { formId: true, uuid: true, status: true, participantUserId: true },
         },
       },
     });
@@ -1434,23 +1457,23 @@ export class AllblueService {
         categoryName: code?.nameKo ?? code?.name ?? schedule.categoryCode,
         instructorName: schedule.instructor.nickname,
         participants: await Promise.all(schedule.participants.filter(p => p.invitationStatus !== 'removed' && (isOwner || p.invitationStatus !== 'rejected')).map(async p => {
-          const isGuest = !p.user;
           const invitation = {
+            isTemporary: p.user?.isTemporary ?? false,
             invitationStatus: p.invitationStatus,
             invitationToken: p.userId === userId ? p.invitationToken : null,
-            canViewDivingLog: !isGuest && (p.userId === userId || divingLogStudents.has(p.userId!)),
-            canWriteDebriefing: !isGuest && isOwner && divingLogStudents.has(p.userId!),
+            canViewDivingLog: (p.userId === userId || divingLogStudents.has(p.userId!)),
+            canWriteDebriefing: isOwner && divingLogStudents.has(p.userId!),
           };
-          if (!isOwner && (isGuest || p.userId !== userId)) {
+          if (!isOwner && p.userId !== userId) {
             return {
               ...invitation,
-              id: isGuest ? p.guest!.id : p.user!.id,
-            userId: isGuest ? null : p.userId,
-              nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
-              profileImage: isGuest ? null : (p.user!.profileImage ?? null),
-              name: isGuest ? null : (p.user!.userName ?? null),
-              isGuest, categoryCode: p.categoryCode ?? null,
-              level: isGuest ? '0' : (p.user!.profile?.level ?? '0'),
+              id: p.user!.id,
+            userId: p.userId,
+              nickname: p.user!.nickname,
+              profileImage: p.user!.profileImage ?? null,
+              name: p.user!.userName ?? null,
+              isGuest: false, categoryCode: p.categoryCode ?? null,
+              level: p.user!.profile?.level ?? '0',
               participantLicenses: [], hasInProgressLicense: false, debriefingDone: false,
               waiverSigned: false, medicalSigned: false,
               waiverUrl: null, medicalUrl: null, waiverUuid: null, medicalUuid: null,
@@ -1459,18 +1482,18 @@ export class AllblueService {
           }
           let waiver = schedule.formSubmissions.find(f =>
             f.formId === 'liability' &&
-            (isGuest ? f.participantGuestId === p.guestId : f.participantUserId === p.userId),
+            f.participantUserId === p.userId,
           );
           let medical = schedule.formSubmissions.find(f =>
             f.formId === 'medical' &&
-            (isGuest ? f.participantGuestId === p.guestId : f.participantUserId === p.userId),
+            f.participantUserId === p.userId,
           );
 
           let waiverReused = false;
           let medicalReused = false;
 
           // 자격증 과정에서 재사용 문서 조회
-          if (!isGuest && (p.categoryCode ?? schedule.categoryCode) === 'CERTIFICATION') {
+          if ((p.categoryCode ?? schedule.categoryCode) === 'CERTIFICATION') {
             const instructorIntId = (await this.prisma.user.findUnique({
               where: { userId: schedule.instructorId },
               select: { id: true },
@@ -1492,7 +1515,7 @@ export class AllblueService {
                     select: { uuid: true, status: true },
                   });
                   if (reusedWaiver) {
-                    waiver = { ...reusedWaiver, formId: 'liability', participantUserId: p.userId, participantGuestId: null };
+                    waiver = { ...reusedWaiver, formId: 'liability', participantUserId: p.userId };
                     waiverReused = true;
                   }
                 }
@@ -1508,7 +1531,7 @@ export class AllblueService {
                     select: { uuid: true, status: true },
                   });
                   if (reusedMedical) {
-                    medical = { ...reusedMedical, formId: 'medical', participantUserId: p.userId, participantGuestId: null };
+                    medical = { ...reusedMedical, formId: 'medical', participantUserId: p.userId };
                     medicalReused = true;
                   }
                 }
@@ -1520,12 +1543,12 @@ export class AllblueService {
 
           return {
             ...invitation,
-            id: isGuest ? p.guest!.id : p.user!.id,
-            userId: isGuest ? null : p.userId,
-            nickname: isGuest ? p.guest!.nickname : p.user!.nickname,
-            profileImage: isGuest ? null : (p.user!.profileImage ?? null),
-            name: isGuest ? null : (p.user!.userName ?? null),
-            isGuest,
+            id: p.user!.id,
+            userId: p.userId,
+            nickname: p.user!.nickname,
+            profileImage: p.user!.profileImage ?? null,
+            name: p.user!.userName ?? null,
+            isGuest: false,
             categoryCode: p.categoryCode ?? null,
             participantLicenses: (p.licenses ?? []).map((l: any) => ({
               userLicenseId: l.userLicenseId,
@@ -1540,9 +1563,9 @@ export class AllblueService {
             medicalUuid: p.invitationStatus === 'pending' || p.invitationStatus === 'rejected' ? null : medical?.uuid ?? null,
             waiverReused,
             medicalReused,
-            level: isGuest ? '0' : (p.user!.profile?.level ?? '0'),
-            hasInProgressLicense: isGuest ? false : (p.user!.licenses?.length > 0),
-            debriefingDone: debriefedIds.has(isGuest ? p.guest!.id : p.user!.id),
+            level: p.user!.profile?.level ?? '0',
+            hasInProgressLicense: p.user!.licenses?.length > 0,
+            debriefingDone: debriefedIds.has(p.user!.id),
           };
         })),
       },
@@ -1631,7 +1654,7 @@ export class AllblueService {
         // 기존 참가자 정리 (form_submission은 보존)
         const existingParts = await tx.schedule_participant.findMany({ where: { scheduleId: id }, include: { user: { select: { id: true } } } });
         for (const ep of existingParts) {
-          const retained = participants.find((p: any) => p.userId === ep.user?.id);
+          const retained = ep.user ? participants.find((p: any) => p.userId === ep.user!.id) : undefined;
           if (retained && (retained.categoryCode ?? categoryCode) === (ep.categoryCode ?? schedule.categoryCode)) continue;
           if (ep.userId) {
             await tx.form_submission.deleteMany({
@@ -1642,23 +1665,15 @@ export class AllblueService {
               data: { scheduleId: null },
             });
           }
-          if (ep.guestId) {
-            await tx.form_submission.deleteMany({
-              where: { scheduleId: id, participantGuestId: ep.guestId, status: { not: 'submitted' } },
-            });
-            await tx.form_submission.updateMany({
-              where: { scheduleId: id, participantGuestId: ep.guestId, status: 'submitted' },
-              data: { scheduleId: null },
-            });
-          }
+
         }
         const retainedUserIds = participants.map((p: any) => p.userId);
-        const removedIds = existingParts.filter(ep => !retainedUserIds.includes(ep.user?.id)).map(ep => ep.id);
+        const removedIds = existingParts.filter(ep => !ep.user || !retainedUserIds.includes(ep.user.id)).map(ep => ep.id);
         if (removedIds.length) await tx.schedule_participant.deleteMany({ where: { id: { in: removedIds } } });
 
         // 기존 참가자는 상태를 보존하고 신규 참가자만 초대
         for (const p of participants) {
-          await this.processParticipant(tx, id, p, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds, existingParts.find(ep => ep.user?.id === p.userId));
+          await this.processParticipant(tx, id, p, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds, existingParts.find(ep => ep.user && ep.user.id === p.userId));
         }
       } else {
         // 하위 호환: 기존 participantIds/guests 방식
@@ -1683,15 +1698,9 @@ export class AllblueService {
           }
         }
         if (guests !== undefined && guests !== null) {
-          const existingGuestParts = await tx.schedule_participant.findMany({ where: { scheduleId: id, guestId: { not: null } } });
-          for (const ep of existingGuestParts) {
-            await tx.form_submission.deleteMany({ where: { scheduleId: id, participantGuestId: ep.guestId!, status: { not: 'submitted' } } });
-            await tx.form_submission.updateMany({ where: { scheduleId: id, participantGuestId: ep.guestId!, status: 'submitted' }, data: { scheduleId: null } });
-            await tx.schedule_participant.deleteMany({ where: { scheduleId: id, guestId: ep.guestId! } });
-          }
           for (const g of guests) {
             if (!g.nickname?.trim()) continue;
-            await this.processParticipant(tx, id, { guestNickname: g.nickname, guestPhone: g.phone, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds);
+            await this.processParticipant(tx, id, { guestNickname: g.nickname, categoryCode }, instructorUserId, instructor!.id, instructor!.nickname, categoryCode, notificationIds);
           }
         }
       }
@@ -1749,6 +1758,7 @@ export class AllblueService {
       this.prisma.user.findUnique({ where: { id: viewerIntId }, select: { userId: true } }),
       this.prisma.user.findUnique({ where: { id: targetIntId }, select: { userId: true } }),
     ]);
+    if (viewer) await this.assertTemporaryUserAccess({ id: targetIntId }, viewer.userId);
     if (!viewer || !target || !(await this.getDivingLogStudentIds(viewer.userId)).has(target.userId)) {
       throw new ForbiddenException('교육 이력이 있는 교육생의 다이빙 로그만 조회할 수 있습니다.');
     }
@@ -1930,6 +1940,9 @@ export class AllblueService {
     const allUserIds = [instructorUserId, ...participantUserIds.filter(id => id !== instructorUserId)];
     if (allUserIds.length < 2) return;
 
+    const temporaryUsers = await tx.user.findMany({ where: { userId: { in: allUserIds }, isTemporary: true },
+      select: { userId: true, temporaryOwner: { select: { userId: true } } } });
+    const temporaryOwners = new Map<string, string | undefined>(temporaryUsers.map(u => [u.userId, u.temporaryOwner?.userId]));
     const diveDate = scheduleDate;
 
     for (let i = 0; i < allUserIds.length; i++) {
@@ -1937,6 +1950,8 @@ export class AllblueService {
         if (i === j) continue;
         const userId = allUserIds[i];
         const buddyId = allUserIds[j];
+        if (temporaryOwners.has(userId)) continue;
+        if (temporaryOwners.has(buddyId) && temporaryOwners.get(buddyId) !== userId) continue;
 
         const existing = await tx.dive_buddy.findUnique({
           where: { userId_buddyId: { userId, buddyId } },
@@ -1957,7 +1972,7 @@ export class AllblueService {
     const user = await this.prisma.user.findUnique({
       where: { userId },
       select: {
-        userId: true, nickname: true, userName: true,
+        isTemporary: true, userId: true, nickname: true, userName: true,
         profile: { select: { level: true } },
         licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
       },
@@ -1965,6 +1980,7 @@ export class AllblueService {
     if (!user) return null;
     return {
       userId: user.userId,
+      isTemporary: user.isTemporary,
       nickname: user.nickname,
       name: user.userName ?? null,
       level: user.profile?.level ?? '0',
@@ -1996,7 +2012,7 @@ export class AllblueService {
     const buddyUsers = await this.prisma.user.findMany({
       where: { userId: { in: items.map(b => b.buddyId) } },
       select: {
-        userId: true, nickname: true, userName: true, profileImage: true,
+        isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true,
         profile: { select: { level: true } },
       },
     });
@@ -2009,6 +2025,7 @@ export class AllblueService {
         const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         return {
           userId: b.buddyId,
+          isTemporary: u?.isTemporary ?? false,
           nickname: u?.nickname ?? '',
           name: u?.userName ?? null,
           profileImage: u?.profileImage ?? null,
@@ -2047,7 +2064,7 @@ export class AllblueService {
     const users = await this.prisma.user.findMany({
       where: { userId: { in: studentUserIds } },
       select: {
-        userId: true, nickname: true, userName: true, profileImage: true,
+        isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true,
         profile: { select: { level: true } },
         licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
       },
@@ -2056,6 +2073,7 @@ export class AllblueService {
     return {
       students: users.map(u => ({
         userId: u.userId,
+        isTemporary: u.isTemporary,
         nickname: u.nickname,
         name: u.userName ?? null,
         profileImage: u.profileImage ?? null,
@@ -2090,7 +2108,7 @@ export class AllblueService {
     const users = await this.prisma.user.findMany({
       where: { userId: { in: instructorIds } },
       select: {
-        userId: true, nickname: true, userName: true,
+        isTemporary: true, userId: true, nickname: true, userName: true,
         profile: { select: { level: true } },
         licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
       },
@@ -2099,6 +2117,7 @@ export class AllblueService {
     return {
       instructors: users.map(u => ({
         userId: u.userId,
+        isTemporary: u.isTemporary,
         nickname: u.nickname,
         name: u.userName ?? null,
         level: u.profile?.level ?? '0',
@@ -2115,7 +2134,7 @@ export class AllblueService {
       include: {
         friend: {
           select: {
-            userId: true, nickname: true, userName: true, profileImage: true,
+            isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true,
             profile: { select: { level: true } },
             licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
           },
@@ -2126,6 +2145,7 @@ export class AllblueService {
     return {
       friends: friends.filter(f => f.friend).map(f => ({
         userId: f.friend!.userId,
+        isTemporary: f.friend!.isTemporary,
         nickname: f.friend!.nickname,
         name: f.friend!.userName ?? null,
         profileImage: f.friend!.profileImage ?? null,
@@ -2155,6 +2175,7 @@ export class AllblueService {
       resolvedFriendId = friend.userId;
     }
 
+    await this.assertTemporaryUserAccess({ userId: resolvedFriendId }, userId);
     if (userId === resolvedFriendId) {
       return { success: false, message: '자기 자신을 추가할 수 없습니다.' };
     }
@@ -2206,7 +2227,7 @@ export class AllblueService {
     const users = await this.prisma.user.findMany({
       where: { userId: { in: blocked.map(b => b.blockedId) } },
       select: {
-        userId: true, nickname: true, userName: true,
+        isTemporary: true, userId: true, nickname: true, userName: true,
         profile: { select: { level: true } },
       },
     });
@@ -2217,6 +2238,7 @@ export class AllblueService {
         const u = userMap.get(b.blockedId);
         return {
           userId: b.blockedId,
+          isTemporary: u?.isTemporary ?? false,
           nickname: u?.nickname ?? '',
           name: u?.userName ?? null,
           level: u?.profile?.level ?? '0',
@@ -2226,6 +2248,7 @@ export class AllblueService {
   }
 
   async blockUser(userId: string, blockedId: string) {
+    await this.assertTemporaryUserAccess({ userId: blockedId }, userId);
     if (!blockedId?.trim()) {
       return { success: false, message: 'blockedId는 필수입니다.' };
     }
@@ -2266,6 +2289,7 @@ export class AllblueService {
     }
 
     const author = await this.prisma.user.findUnique({ where: { id: createdBy }, select: { userId: true, profile: { select: { level: true } } } });
+    if (author) await this.assertTemporaryUserAccess({ id: participantId }, author.userId);
     const participant = await this.prisma.schedule_participant.findFirst({
       where: { scheduleId, invitationStatus: 'accepted', user: { id: participantId } }, include: { schedule: true },
     });
@@ -2332,7 +2356,7 @@ export class AllblueService {
       where: { groupId },
       include: {
         user: {
-          select: { userId: true, nickname: true, userName: true, profileImage: true, profile: { select: { level: true } } },
+          select: { isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true, profile: { select: { level: true } } },
         },
       },
     });
@@ -2340,6 +2364,7 @@ export class AllblueService {
     return {
       members: members.map(m => ({
         userId: m.user.userId,
+        isTemporary: m.user.isTemporary,
         nickname: m.user.nickname,
         name: m.user.userName ?? null,
         profileImage: m.user.profileImage ?? null,
@@ -2349,6 +2374,7 @@ export class AllblueService {
   }
 
   async addFriendGroupMember(groupId: number, memberUserId: string, ownerUserId: string) {
+    await this.assertTemporaryUserAccess({ userId: memberUserId }, ownerUserId);
     const group = await this.prisma.friend_group.findUnique({ where: { id: groupId } });
     if (!group) return { success: false, message: '존재하지 않는 그룹입니다.' };
     if (group.userId !== ownerUserId) return { success: false, message: '권한이 없습니다.' };
@@ -2522,35 +2548,40 @@ export class AllblueService {
         : await tx.$queryRaw<Array<{ id: number }>>`SELECT id FROM user WHERE userId = ${userId} AND id = ${expectedId} FOR UPDATE`;
       const user = users[0];
       if (!user) return { success: false, message: '존재하지 않는 사용자입니다.' };
-      const schedules = await tx.schedule.findMany({ where: { instructorId: userId }, select: { id: true } });
-      const scheduleIds = schedules.map((s) => s.id);
-      await tx.debriefing.deleteMany({ where: { OR: [{ createdBy: user.id }, { participantId: user.id }, { scheduleId: { in: scheduleIds } }] } });
-      await tx.form_submission.deleteMany({ where: { OR: [{ participantUserId: userId }, { instructorId: user.id }, { scheduleId: { in: scheduleIds } }] } });
-      await tx.form_item.deleteMany({ where: { instructorId: user.id } });
-      await tx.app_notification.deleteMany({ where: { OR: [{ senderId: userId }, { receiverId: userId }, { scheduleId: { in: scheduleIds } }] } });
-      await tx.dive_buddy.deleteMany({ where: { OR: [{ userId }, { buddyId: userId }, { scheduleId: { in: scheduleIds } }] } });
-      await tx.schedule_participant.deleteMany({ where: { OR: [{ userId }, { scheduleId: { in: scheduleIds } }] } });
-      await tx.schedule.deleteMany({ where: { instructorId: userId } });
-      await tx.inquiry.deleteMany({ where: { userId } });
-      await tx.friend_group.deleteMany({ where: { userId } });
-      await tx.friend_group_member.deleteMany({ where: { userId } });
-      await tx.close_friend.deleteMany({ where: { OR: [{ userId }, { friendId: userId }] } });
-      await tx.blocked_user.deleteMany({ where: { OR: [{ userId }, { blockedId: userId }] } });
-      await tx.user_license.deleteMany({ where: { userId } });
-      await tx.user_license.updateMany({ where: { instructorId: userId }, data: { instructorId: null } });
-      await tx.guest_user.updateMany({ where: { linkedUserId: userId }, data: { linkedUserId: null } });
-      await tx.organization.deleteMany({ where: { representativeId: userId } });
-      await tx.login_history.deleteMany({ where: { userId: user.id } });
-      await tx.cert_request.deleteMany({ where: { userId: user.id } });
-      await tx.user_license_achievement.deleteMany({ where: { userId: user.id } });
-      await tx.user_license_achievement.updateMany({ where: { completedBy: user.id }, data: { completedBy: null } });
-      await tx.user_profile.deleteMany({ where: { userId: user.id } });
-      await tx.user_setting.deleteMany({ where: { userId } });
-      await tx.push_token.deleteMany({ where: { userId } });
-      await tx.instructor_register_request.deleteMany({ where: { userId } });
-      await tx.user.delete({ where: { id: user.id } });
+      const temporaryUsers = await tx.user.findMany({ where: { isTemporary: true, temporaryOwnerId: user.id }, select: { id: true, userId: true } });
+      for (const temporary of temporaryUsers) await this.deleteUserData(tx, temporary, temporary.userId);
+      await this.deleteUserData(tx, user, userId);
       return { success: true };
     });
+  }
+
+  private async deleteUserData(tx: any, user: { id: number }, userId: string) {
+    const schedules = await tx.schedule.findMany({ where: { instructorId: userId }, select: { id: true } });
+    const scheduleIds = schedules.map((s) => s.id);
+    await tx.debriefing.deleteMany({ where: { OR: [{ createdBy: user.id }, { participantId: user.id }, { scheduleId: { in: scheduleIds } }] } });
+    await tx.form_submission.deleteMany({ where: { OR: [{ participantUserId: userId }, { instructorId: user.id }, { scheduleId: { in: scheduleIds } }] } });
+    await tx.form_item.deleteMany({ where: { instructorId: user.id } });
+    await tx.app_notification.deleteMany({ where: { OR: [{ senderId: userId }, { receiverId: userId }, { scheduleId: { in: scheduleIds } }] } });
+    await tx.dive_buddy.deleteMany({ where: { OR: [{ userId }, { buddyId: userId }, { scheduleId: { in: scheduleIds } }] } });
+    await tx.schedule_participant.deleteMany({ where: { OR: [{ userId }, { scheduleId: { in: scheduleIds } }] } });
+    await tx.schedule.deleteMany({ where: { instructorId: userId } });
+    await tx.inquiry.deleteMany({ where: { userId } });
+    await tx.friend_group.deleteMany({ where: { userId } });
+    await tx.friend_group_member.deleteMany({ where: { userId } });
+    await tx.close_friend.deleteMany({ where: { OR: [{ userId }, { friendId: userId }] } });
+    await tx.blocked_user.deleteMany({ where: { OR: [{ userId }, { blockedId: userId }] } });
+    await tx.user_license.deleteMany({ where: { userId } });
+    await tx.user_license.updateMany({ where: { instructorId: userId }, data: { instructorId: null } });
+    await tx.organization.deleteMany({ where: { representativeId: userId } });
+    await tx.login_history.deleteMany({ where: { userId: user.id } });
+    await tx.cert_request.deleteMany({ where: { userId: user.id } });
+    await tx.user_license_achievement.deleteMany({ where: { userId: user.id } });
+    await tx.user_license_achievement.updateMany({ where: { completedBy: user.id }, data: { completedBy: null } });
+    await tx.user_profile.deleteMany({ where: { userId: user.id } });
+    await tx.user_setting.deleteMany({ where: { userId } });
+    await tx.push_token.deleteMany({ where: { userId } });
+    await tx.instructor_register_request.deleteMany({ where: { userId } });
+    await tx.user.delete({ where: { id: user.id } });
   }
 
   private async checkAdmin(userId: string): Promise<boolean> {
@@ -3239,6 +3270,7 @@ export class AllblueService {
     return {
       token,
       user: {
+        isTemporary: user.isTemporary,
         id: user.id,
         nickname: user.nickname,
         name: user.userName ?? null,
@@ -3290,6 +3322,7 @@ export class AllblueService {
       where: { kakaoId },
     });
 
+    if (existingUser?.isTemporary) throw new ForbiddenException('임시 사용자는 로그인할 수 없습니다.');
     if (existingUser) {
       const token = jwt.sign(
         { sub: String(existingUser.id), userId: existingUser.userId, userType: existingUser.userType },
@@ -3372,6 +3405,7 @@ export class AllblueService {
       where: { googleId },
     });
 
+    if (existingUser?.isTemporary) throw new ForbiddenException('임시 사용자는 로그인할 수 없습니다.');
     if (existingUser) {
       const token = jwt.sign(
         { sub: String(existingUser.id), userId: existingUser.userId, userType: existingUser.userType },
@@ -3447,6 +3481,7 @@ export class AllblueService {
       where: { naverId },
     });
 
+    if (existingUser?.isTemporary) throw new ForbiddenException('임시 사용자는 로그인할 수 없습니다.');
     if (existingUser) {
       const token = jwt.sign(
         { sub: String(existingUser.id), userId: existingUser.userId, userType: existingUser.userType },
@@ -3543,6 +3578,7 @@ export class AllblueService {
       where: { appleId },
     });
 
+    if (existingUser?.isTemporary) throw new ForbiddenException('임시 사용자는 로그인할 수 없습니다.');
     if (existingUser) {
       const token = jwt.sign(
         { sub: String(existingUser.id), userId: existingUser.userId, userType: existingUser.userType },
@@ -3593,7 +3629,7 @@ export class AllblueService {
       where: { id: Number(decoded.sub) },
     });
 
-    if (!user || user.refreshToken !== refreshToken) {
+    if (!user || user.isTemporary || user.refreshToken !== refreshToken) {
       return { success: false, message: '세션이 만료되었습니다. 다시 로그인해주세요.' };
     }
 
