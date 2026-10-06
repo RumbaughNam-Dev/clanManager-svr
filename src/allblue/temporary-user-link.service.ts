@@ -12,6 +12,16 @@ const json = (value: unknown): any => JSON.parse(JSON.stringify(value));
 const fingerprint = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export type LinkChange = { table: string; action: 'update' | 'delete'; id: number; before: any; after: any };
 
+// Return only the dialing prefix and last four digits; never expose the full number.
+export function maskLinkPhone(phone?: string | null): string | null {
+  if (!phone) return null;
+  let digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('82')) digits = `0${digits.slice(2)}`;
+  if (!/^0\d{8,10}$/.test(digits)) return null;
+  const prefix = digits.startsWith('02') ? '02' : digits.slice(0, 3);
+  return `${prefix}-xxxx-${digits.slice(-4)}`;
+}
+
 @Injectable()
 export class TemporaryUserLinkService {
   constructor(private prisma: AllbluePrismaService, private config: ConfigService) {}
@@ -49,7 +59,7 @@ export class TemporaryUserLinkService {
       OR: [{ nickname: { contains: query.trim() } }, { userName: { contains: query.trim() } }],
     }, select: { id: true, userId: true, nickname: true, userName: true, profileImage: true, phone: true, profile: { select: { level: true } } }, orderBy: { id: 'asc' }, take: 30 });
     return { users: users.map(u => ({ id: u.id, userId: u.userId, nickname: u.nickname, name: u.userName,
-      profileImage: u.profileImage, level: u.profile?.level ?? '0', phoneHint: u.phone ? `끝자리 ${u.phone.slice(-4)}` : null })) };
+      profileImage: u.profileImage, level: u.profile?.level ?? '0', phoneHint: maskLinkPhone(u.phone) })) };
   }
 
   private async collect(db: DB, scheduleId: number, sourceId: number, targetId: number, actorId: number) {

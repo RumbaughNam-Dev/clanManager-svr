@@ -1,4 +1,4 @@
-import { buildLinkPlan, publicAuditDetails, TemporaryUserLinkService } from './temporary-user-link.service';
+import { buildLinkPlan, maskLinkPhone, publicAuditDetails, TemporaryUserLinkService } from './temporary-user-link.service';
 import { lockTemporaryUser } from './temporary-user-lock';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import jwt from 'jsonwebtoken';
@@ -126,4 +126,13 @@ it.each(['1020', '1205', '1213'])('returns a recheck conflict for database lock 
   const token = jwt.sign({ purpose: 'temporary-user-link', scheduleId: 1, sourceId: 2, targetId: 3, actorId: 4 }, 'secret');
   const service = new TemporaryUserLinkService(prisma, { get: () => 'secret' } as any);
   await expect(service.link(1, 2, 3, 4, token)).rejects.toThrow(ConflictException);
+});
+
+
+it.each([
+  ['01012345142', '010-xxxx-5142'], ['010-1234-5142', '010-xxxx-5142'],
+  ['+82 10 1234 5142', '010-xxxx-5142'], ['0111235142', '011-xxxx-5142'],
+  ['02-1234-5142', '02-xxxx-5142'], [null, null], ['', null], ['5142', null],
+])('masks a link candidate phone %s as %s', (input, expected) => {
+  expect(maskLinkPhone(input)).toBe(expected);
 });
