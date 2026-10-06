@@ -60,7 +60,7 @@ async function run() {
   await rejectsStatus(links.targets(first.id, source.id, stranger.id, 'member'), 403);
   assert.deepEqual(await links.targets(first.id, source.id, actor.id, ''), { users: [] });
   const candidates = await links.targets(first.id, source.id, actor.id, 'member');
-  assert.equal(candidates.users.find(u => u.id === target.id).phoneHint, '010-xxxx-5678');
+  assert.equal(candidates.users.find(u => u.id === target.id).phoneHint, '010-****-5678');
   assert.ok(!JSON.stringify(candidates).includes('0101234'));
   await db.blocked_user.create({ data: { userId: target.userId, blockedId: actor.userId } });
   await rejectsStatus(preview(first, source, target, actor), 403);

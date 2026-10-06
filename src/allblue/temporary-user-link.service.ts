@@ -19,7 +19,7 @@ export function maskLinkPhone(phone?: string | null): string | null {
   if (digits.startsWith('82')) digits = `0${digits.slice(2)}`;
   if (!/^0\d{8,10}$/.test(digits)) return null;
   const prefix = digits.startsWith('02') ? '02' : digits.slice(0, 3);
-  return `${prefix}-xxxx-${digits.slice(-4)}`;
+  return `${prefix}-****-${digits.slice(-4)}`;
 }
 
 @Injectable()
