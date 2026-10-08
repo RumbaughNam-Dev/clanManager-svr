@@ -816,20 +816,33 @@ export class AllblueService {
 
   async respondToSchedule(id: number, userId: string, action: string, token: string) {
     if (!['accept', 'reject'].includes(action) || !token) throw new BadRequestException('잘못된 요청입니다.');
-    return this.prisma.$transaction(async tx => {
+    const notification = await this.prisma.$transaction(async tx => {
       const changed = await tx.schedule_participant.updateMany({
         where: { scheduleId: id, userId, invitationStatus: 'pending', invitationToken: token },
         data: { invitationStatus: action === 'accept' ? 'accepted' : 'rejected', respondedAt: new Date() },
       });
       if (!changed.count) throw new ConflictException('이미 처리되었거나 만료된 요청입니다.');
       await tx.app_notification.updateMany({ where: { receiverId: userId, invitationToken: token, readAt: null }, data: { readAt: new Date() } });
+      const schedule = await tx.schedule.findUniqueOrThrow({ where: { id } });
       if (action === 'accept') {
-        const schedule = await tx.schedule.findUniqueOrThrow({ where: { id } });
         const participants = await tx.schedule_participant.findMany({ where: { scheduleId: id, invitationStatus: 'accepted', userId: { not: null } }, select: { userId: true } });
         await this.updateDiveBuddies(tx, id, schedule.scheduleDate, schedule.instructorId, participants.map(p => p.userId!));
       }
-      return { success: true };
+      const participant = await tx.user.findUnique({ where: { userId }, select: { nickname: true } });
+      return {
+        userIds: [schedule.instructorId],
+        title: '일정 등록 응답',
+        body: `${participant?.nickname || '다이버'} 교육생이 일정 등록을 ${action === 'accept' ? '수락' : '거절'}했어요.`,
+        data: { type: 'schedule', scheduleId: id },
+      };
     });
+    // 응답 저장이 완료된 후 발송하며, 푸시 실패가 수락/거절 결과를 되돌리지 않게 한다.
+    try {
+      await this.push.sendPushNotifications(notification);
+    } catch (error) {
+      console.error('[Push] Schedule response delivery failed', error);
+    }
+    return { success: true };
   }
 
   async manageScheduleInvitation(id: number, participantId: number, userId: string, action: string) {
@@ -1329,7 +1342,12 @@ export class AllblueService {
       include: {
         pool: { select: { name: true } },
         instructor: { select: { nickname: true, userName: true, profile: { select: { level: true } } } },
-        participants: { include: { user: { select: { isTemporary: true, nickname: true, userName: true, profile: { select: { level: true } } } } } },
+        participants: {
+          include: {
+            user: { select: { isTemporary: true, nickname: true, userName: true, profile: { select: { level: true } } } },
+            licenses: { select: { userLicense: { select: { license: { select: { levelOrder: true, isInstructor: true } } } } } },
+          },
+        },
       },
     });
 
@@ -1357,6 +1375,17 @@ export class AllblueService {
 
         const minLevel = levels.reduce((min, l) => levelOrder.indexOf(l) < levelOrder.indexOf(min) ? l : min);
 
+        // 등록된 교육 과정 기준으로 계산하며, 보유 자격/강사 레벨은 사용하지 않는다.
+        const courseLevels = s.participants
+          .filter(p => !['rejected', 'removed'].includes(p.invitationStatus)
+            && (p.categoryCode ?? s.categoryCode) === 'CERTIFICATION')
+          .flatMap(p => (p.licenses ?? []).map(l => {
+            const license = l.userLicense.license;
+            return license.isInstructor ? 5 : license.levelOrder;
+          }))
+          .filter(level => level >= 1 && level <= 5);
+        const minCourseLevel = courseLevels.length > 0 ? Math.min(...courseLevels) : null;
+
         return {
           id: s.id,
           title: s.title,
@@ -1379,6 +1408,7 @@ export class AllblueService {
             level: p.user?.profile?.level ?? null,
           })),
           minLevel,
+          minCourseLevel,
         };
       }),
     };

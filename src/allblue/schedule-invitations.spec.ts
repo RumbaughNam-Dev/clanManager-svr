@@ -124,3 +124,52 @@ it.each(['EXPERIENCE', 'CERTIFICATION', 'LECTURE'])('restricts %s to instructors
   expect(typeof read.items[0].readAt).toBe('string');
   expect(Number.isFinite(Date.parse(read.items[0].readAt!))).toBe(true);
 });
+
+
+it.each(['accept', 'reject'])('notifies the schedule creator after %s commits, only once', async action => {
+  const { service, prisma, push } = fixture();
+  prisma.user.findUnique.mockResolvedValue({ nickname: '민수' });
+  let committed = false;
+  prisma.$transaction.mockImplementation(async callback => {
+    const result = await callback(prisma);
+    expect(push.sendPushNotifications).not.toHaveBeenCalled();
+    committed = true;
+    return result;
+  });
+  push.sendPushNotifications.mockImplementation(async () => {
+    expect(committed).toBe(true);
+    return { success: true };
+  });
+  await expect(service.respondToSchedule(12, 'student', action, 'token-1')).resolves.toEqual({ success: true });
+  expect(push.sendPushNotifications).toHaveBeenCalledWith({
+    userIds: ['teacher'], title: '일정 등록 응답',
+    body: `민수 교육생이 일정 등록을 ${action === 'accept' ? '수락' : '거절'}했어요.`,
+    data: { type: 'schedule', scheduleId: 12 },
+  });
+  await expect(service.respondToSchedule(12, 'student', action, 'token-1')).rejects.toThrow(ConflictException);
+  expect(push.sendPushNotifications).toHaveBeenCalledTimes(1);
+});
+
+it('does not send response pushes for expired tokens or a failed commit', async () => {
+  const { service, prisma, push } = fixture();
+  await expect(service.respondToSchedule(12, 'student', 'accept', 'expired')).rejects.toThrow(ConflictException);
+  expect(push.sendPushNotifications).not.toHaveBeenCalled();
+  prisma.$transaction.mockImplementation(async callback => {
+    await callback(prisma);
+    throw new Error('Commit failed');
+  });
+  await expect(service.respondToSchedule(12, 'student', 'accept', 'token-1')).rejects.toThrow('Commit failed');
+  expect(push.sendPushNotifications).not.toHaveBeenCalled();
+});
+
+it.each(['accept', 'reject'])('preserves %s when push delivery throws', async action => {
+  const { service, participant, push } = fixture();
+  push.sendPushNotifications.mockRejectedValue(new Error('Push unavailable'));
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await expect(service.respondToSchedule(12, 'student', action, 'token-1')).resolves.toEqual({ success: true });
+    expect(participant.invitationStatus).toBe(action === 'accept' ? 'accepted' : 'rejected');
+  } finally {
+    log.mockRestore();
+  }
+});
