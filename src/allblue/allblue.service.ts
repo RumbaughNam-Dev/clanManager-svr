@@ -789,7 +789,16 @@ export class AllblueService {
     const items = rows.slice(0, 10);
     if (after) items.reverse();
     const unreadCount = await this.prisma.app_notification.count({ where: { receiverId: userId, deletedAt: null, readAt: null } });
-    return { items, hasMore, unreadCount };
+    return {
+      items: items.map(item => ({
+        ...item,
+        createdAt: item.createdAt.toISOString(),
+        readAt: item.readAt?.toISOString() ?? null,
+        deletedAt: item.deletedAt?.toISOString() ?? null,
+      })),
+      hasMore,
+      unreadCount,
+    };
   }
 
   async readNotification(id: number, userId: string) {
@@ -1441,7 +1450,7 @@ export class AllblueService {
       distinct: ['participantId'],
     });
     const debriefedIds = new Set(debriefings.map(d => d.participantId));
-    const divingLogStudents = await this.getDivingLogStudentIds(userId);
+    const divingLogStudents = await this.getDivingLogStudentIds(userId, true);
     const debriefingStudents = isOwner ? await this.getDivingLogStudentIds(userId, true) : new Set<string>();
 
     const d = schedule.scheduleDate;
@@ -1734,22 +1743,30 @@ export class AllblueService {
     const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
     const today = new Date(now.toISOString().slice(0, 10));
     const categories = ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'];
-    if (includeTraining) categories.push('TRAINING');
     const participants = await this.prisma.schedule_participant.findMany({
       where: {
         userId: { not: null }, invitationStatus: 'accepted',
+        schedule: { instructorId: viewerId },
         OR: [
-          { categoryCode: { in: categories } },
-          { categoryCode: null, schedule: { categoryCode: { in: categories } } },
+          {
+            OR: [
+              { categoryCode: { in: categories } },
+              { categoryCode: null, schedule: { categoryCode: { in: categories } } },
+            ],
+            schedule: {
+              OR: [
+                { scheduleDate: { lt: today } },
+                { scheduleDate: today, startHour: { lt: now.getUTCHours() } },
+                { scheduleDate: today, startHour: now.getUTCHours(), startMinute: { lte: now.getUTCMinutes() } },
+              ],
+            },
+          },
+          // Accepted training participants can be reviewed before the session starts.
+          ...(includeTraining ? [
+            { categoryCode: 'TRAINING' },
+            { categoryCode: null, schedule: { categoryCode: 'TRAINING' } },
+          ] : []),
         ],
-        schedule: {
-          instructorId: viewerId,
-          OR: [
-            { scheduleDate: { lt: today } },
-            { scheduleDate: today, startHour: { lt: now.getUTCHours() } },
-            { scheduleDate: today, startHour: now.getUTCHours(), startMinute: { lte: now.getUTCMinutes() } },
-          ],
-        },
       },
       select: { userId: true }, distinct: ['userId'],
     });
@@ -1772,7 +1789,7 @@ export class AllblueService {
   }
 
   async getUserAchievements(userIntId: number, currentUserId: number) {
-    await this.assertDivingLogAccess(currentUserId, userIntId);
+    await this.assertDivingLogAccess(currentUserId, userIntId, true, true);
     // user.id(INT) → user.userId(VARCHAR) 조회
     const user = await this.prisma.user.findUnique({
       where: { id: userIntId },

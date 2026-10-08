@@ -3,7 +3,7 @@ import { AllblueService } from './allblue.service';
 
 function fixture() {
   const participant: any = { id: 1, scheduleId: 12, userId: 'student', invitationStatus: 'pending', invitationToken: 'token-1', licenses: [] };
-  const notifications: any[] = [{ id: 1, senderId: 'teacher', receiverId: 'student', scheduleId: 12, invitationToken: 'token-1', readAt: null, deletedAt: null }];
+  const notifications: any[] = [{ id: 1, senderId: 'teacher', receiverId: 'student', scheduleId: 12, invitationToken: 'token-1', createdAt: new Date('2026-09-23T03:04:00.000Z'), readAt: null, deletedAt: null }];
   const matches = (row: any, where: any) => Object.entries(where).every(([key, value]: [string, any]) => {
     if (key === 'user') return value.id === 2;
     if (value && typeof value === 'object') {
@@ -112,4 +112,15 @@ it.each(['EXPERIENCE', 'CERTIFICATION', 'LECTURE'])('restricts %s to instructors
   await expect((service as any).requireTeachingAccess('student', ['TRAINING', 'FUN_DIVE'])).resolves.toBeUndefined();
   prisma.user.findUnique.mockResolvedValue({ profile: { level: '5' } });
   await expect((service as any).requireTeachingAccess('teacher', [category])).resolves.toBeUndefined();
+});
+
+ it('returns ISO notification dates that survive response object serialization', async () => {
+  const { service } = fixture();
+  const unread = await service.listNotifications('student', {});
+  expect(unread.items[0].createdAt).toBe('2026-09-23T03:04:00.000Z');
+  expect(unread.items[0].readAt).toBeNull();
+  await service.readNotification(1, 'student');
+  const read = await service.listNotifications('student', { all: 'true' });
+  expect(typeof read.items[0].readAt).toBe('string');
+  expect(Number.isFinite(Date.parse(read.items[0].readAt!))).toBe(true);
 });
