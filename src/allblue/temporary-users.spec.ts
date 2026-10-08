@@ -125,3 +125,44 @@ it('deletes creator-owned temporary identities in the same withdrawal transactio
   expect(prisma.user.findMany.mock.calls[0][0].where).toEqual({ isTemporary: true, temporaryOwnerId: 10 });
   expect(service.deleteUserData.mock.calls.map(([, user, id]) => [user.id, id])).toEqual([[23, 'temporary-test'], [10, 'teacher']]);
 });
+
+it.each([
+  ['TRAINING', 'CERTIFICATION', true],
+  [null, 'TRAINING', true],
+  ['FUN_DIVE', 'TRAINING', false],
+  ['ETC', 'TRAINING', false],
+])('debriefing uses personal category %s before schedule category %s', async (personal, overall, allowed) => {
+  const { service, prisma } = fixture();
+  prisma.user.findUnique.mockImplementation(async ({ where }) => where.id === 10 ? { userId: 'teacher', profile: { level: '5' } } : temporary);
+  prisma.schedule_participant.findFirst.mockResolvedValue({ categoryCode: personal, schedule: { instructorId: 'teacher', categoryCode: overall } });
+  const result = service.createDebriefing({ scheduleId: 1, participantId: 23, content: '트레이닝 기록' }, 10);
+  if (allowed) {
+    await result;
+    expect(prisma.debriefing.create).toHaveBeenCalledTimes(1);
+  } else {
+    await expect(result).rejects.toThrow(ForbiddenException);
+    expect(prisma.debriefing.create).not.toHaveBeenCalled();
+  }
+  expect(prisma.schedule_participant.findFirst.mock.calls[0][0].where.invitationStatus).toBe('accepted');
+});
+
+it.each(['0', '4'])('rejects training debriefing by non-instructor level %s', async level => {
+  const { service, prisma } = fixture();
+  prisma.user.findUnique.mockImplementation(async ({ where }) => where.id === 10 ? { userId: 'teacher', profile: { level } } : temporary);
+  prisma.schedule_participant.findFirst.mockResolvedValue({ categoryCode: 'TRAINING', schedule: { instructorId: 'teacher' } });
+  await expect(service.createDebriefing({ scheduleId: 1, participantId: 23, content: '기록' }, 10)).rejects.toThrow(ForbiddenException);
+  expect(prisma.debriefing.create).not.toHaveBeenCalled();
+});
+
+it('includes training history only for debriefing permission, preserving log permission', async () => {
+  const { service, prisma } = fixture();
+  prisma.user.findUnique.mockResolvedValue({ profile: { level: '5' } });
+  await service.getDivingLogStudentIds('teacher');
+  await service.getDivingLogStudentIds('teacher', true);
+  const [logs, debriefing] = prisma.schedule_participant.findMany.mock.calls.map(([query]) => query.where);
+  expect(logs.OR[0].categoryCode.in).not.toContain('TRAINING');
+  expect(debriefing.OR[0].categoryCode.in).toContain('TRAINING');
+  expect(debriefing.OR[1].schedule.categoryCode.in).toContain('TRAINING');
+  expect(debriefing.schedule).toEqual(logs.schedule);
+  expect(debriefing.invitationStatus).toBe('accepted');
+});

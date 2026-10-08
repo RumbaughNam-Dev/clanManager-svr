@@ -1442,6 +1442,7 @@ export class AllblueService {
     });
     const debriefedIds = new Set(debriefings.map(d => d.participantId));
     const divingLogStudents = await this.getDivingLogStudentIds(userId);
+    const debriefingStudents = isOwner ? await this.getDivingLogStudentIds(userId, true) : new Set<string>();
 
     const d = schedule.scheduleDate;
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1467,7 +1468,7 @@ export class AllblueService {
             invitationStatus: p.invitationStatus,
             invitationToken: p.userId === userId ? p.invitationToken : null,
             canViewDivingLog: (p.userId === userId || divingLogStudents.has(p.userId!)),
-            canWriteDebriefing: isOwner && divingLogStudents.has(p.userId!),
+            canWriteDebriefing: isOwner && debriefingStudents.has(p.userId!),
           };
           if (!isOwner && p.userId !== userId) {
             return {
@@ -1723,7 +1724,7 @@ export class AllblueService {
     return result;
   }
 
-  private async getDivingLogStudentIds(viewerId: string): Promise<Set<string>> {
+  private async getDivingLogStudentIds(viewerId: string, includeTraining = false): Promise<Set<string>> {
     const viewer = await this.prisma.user.findUnique({
       where: { userId: viewerId }, select: { profile: { select: { level: true } } },
     });
@@ -1733,6 +1734,7 @@ export class AllblueService {
     const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
     const today = new Date(now.toISOString().slice(0, 10));
     const categories = ['EXPERIENCE', 'CERTIFICATION', 'LECTURE'];
+    if (includeTraining) categories.push('TRAINING');
     const participants = await this.prisma.schedule_participant.findMany({
       where: {
         userId: { not: null }, invitationStatus: 'accepted',
@@ -1754,7 +1756,7 @@ export class AllblueService {
     return new Set(participants.flatMap(p => p.userId && p.userId !== viewerId ? [p.userId] : []));
   }
 
-  private async assertDivingLogAccess(viewerIntId: number, targetIntId: number, allowSelf = true) {
+  private async assertDivingLogAccess(viewerIntId: number, targetIntId: number, allowSelf = true, includeTraining = false) {
     if (!Number.isInteger(viewerIntId) || viewerIntId <= 0 || !Number.isInteger(targetIntId) || targetIntId <= 0) {
       throw new ForbiddenException('다이빙 로그 조회 권한이 없습니다.');
     }
@@ -1764,7 +1766,7 @@ export class AllblueService {
       this.prisma.user.findUnique({ where: { id: targetIntId }, select: { userId: true } }),
     ]);
     if (viewer) await this.assertTemporaryUserAccess({ id: targetIntId }, viewer.userId);
-    if (!viewer || !target || !(await this.getDivingLogStudentIds(viewer.userId)).has(target.userId)) {
+    if (!viewer || !target || !(await this.getDivingLogStudentIds(viewer.userId, includeTraining)).has(target.userId)) {
       throw new ForbiddenException('교육 이력이 있는 교육생의 다이빙 로그만 조회할 수 있습니다.');
     }
   }
@@ -1913,7 +1915,7 @@ export class AllblueService {
   }
 
   async getUserDebriefings(userIntId: number, page: number, limit: number, currentUserId: number) {
-    await this.assertDivingLogAccess(currentUserId, userIntId);
+    await this.assertDivingLogAccess(currentUserId, userIntId, true, true);
     const offset = (page - 1) * limit;
 
     const debriefings = await this.prisma.debriefing.findMany({
@@ -2323,8 +2325,8 @@ export class AllblueService {
       where: { scheduleId, invitationStatus: 'accepted', user: { id: participantId } }, include: { schedule: true },
     });
     if (!author || !['5', 'A'].includes(String(author.profile?.level).toUpperCase()) || !participant || participant.schedule.instructorId !== author.userId ||
-      !['EXPERIENCE', 'CERTIFICATION', 'LECTURE'].includes(participant.categoryCode ?? participant.schedule.categoryCode)) {
-      throw new ForbiddenException('수락한 교육생의 디브리핑만 작성할 수 있습니다.');
+      !['EXPERIENCE', 'CERTIFICATION', 'LECTURE', 'TRAINING'].includes(participant.categoryCode ?? participant.schedule.categoryCode)) {
+      throw new ForbiddenException('수락한 교육생 또는 트레이닝 참석자의 디브리핑만 작성할 수 있습니다.');
     }
 
     await tx.debriefing.create({
