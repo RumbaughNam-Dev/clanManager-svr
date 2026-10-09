@@ -11,6 +11,11 @@ export function validateNotice(body: unknown) {
   return { title: data.title.trim().replace(/[\r\n]+/g, ' '), content: data.content.trim(), pinned: data.pinned, popup: data.popup };
 }
 
+// The global BigInt serializer traverses objects, so return dates as strings first.
+export function serializeNotice<T extends { createdAt: Date; updatedAt: Date }>(notice: T) {
+  return { ...notice, createdAt: notice.createdAt.toISOString(), updatedAt: notice.updatedAt.toISOString() };
+}
+
 @Injectable()
 export class NoticesService {
   constructor(private readonly prisma: AllbluePrismaService) {}
@@ -29,7 +34,7 @@ export class NoticesService {
       this.prisma.notice.findMany({ where: { deleted: false }, orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }], skip: offset, take: 31 }),
       this.viewer(userId),
     ]);
-    return { notices: rows.slice(0, 30), hasMore: rows.length > 30, canManage: user?.profile?.level?.toUpperCase() === 'A' };
+    return { notices: rows.slice(0, 30).map(serializeNotice), hasMore: rows.length > 30, canManage: user?.profile?.level?.toUpperCase() === 'A' };
   }
   async popups() {
     const notices = await this.prisma.notice.findMany({ where: { deleted: false, popup: true }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { id: true, title: true, content: true } });
@@ -38,12 +43,13 @@ export class NoticesService {
   async detail(id: number, userId: string) {
     const [notice, user] = await Promise.all([this.prisma.notice.findFirst({ where: { id, deleted: false } }), this.viewer(userId)]);
     if (!notice) throw new NotFoundException('공지사항을 찾을 수 없습니다.');
-    return { notice, canManage: user?.profile?.level?.toUpperCase() === 'A' };
+    return { notice: serializeNotice(notice), canManage: user?.profile?.level?.toUpperCase() === 'A' };
   }
   async create(userId: string, body: unknown) {
     const author = await this.admin(userId);
     const data = validateNotice(body);
-    return { notice: await this.prisma.notice.create({ data: { ...data, authorId: userId, authorName: author.nickname } }) };
+    const notice = await this.prisma.notice.create({ data: { ...data, authorId: userId, authorName: author.nickname } });
+    return { notice: serializeNotice(notice) };
   }
   async update(id: number, userId: string, body: unknown) {
     await this.admin(userId);
