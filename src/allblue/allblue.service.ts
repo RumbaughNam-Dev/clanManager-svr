@@ -2059,42 +2059,74 @@ export class AllblueService {
 
   async getBuddies(userId: string, page: number, limit: number) {
     const blockedIds = await this.getBlockedIds(userId);
-    const offset = (page - 1) * limit;
-    const buddies = await this.prisma.dive_buddy.findMany({
-      where: { userId, buddyId: { notIn: [...blockedIds] } },
-      orderBy: { lastDiveDate: 'desc' },
-      skip: offset,
-      take: limit + 1,
+    // 일정의 날짜/시간은 한국 시간이다. 미래 일정으로 덮인 dive_buddy 캐시는 사용하지 않는다.
+    const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const today = new Date(now.toISOString().slice(0, 10));
+    const schedules = await this.prisma.schedule.findMany({
+      where: {
+        AND: [
+          { OR: [
+            { instructorId: userId },
+            { participants: { some: { userId, invitationStatus: 'accepted' } } },
+          ] },
+          { OR: [
+            { scheduleDate: { lt: today } },
+            { scheduleDate: today, startHour: { lt: now.getUTCHours() } },
+            { scheduleDate: today, startHour: now.getUTCHours(), startMinute: { lt: now.getUTCMinutes() } },
+            ...(now.getUTCSeconds() > 0 || now.getUTCMilliseconds() > 0 ? [
+              { scheduleDate: today, startHour: now.getUTCHours(), startMinute: now.getUTCMinutes() },
+            ] : []),
+          ] },
+        ],
+      },
+      orderBy: [{ scheduleDate: 'desc' }, { startHour: 'desc' }, { startMinute: 'desc' }, { id: 'desc' }],
+      select: {
+        scheduleDate: true, instructorId: true,
+        participants: {
+          where: { invitationStatus: 'accepted', userId: { not: null } },
+          select: { userId: true }, orderBy: { userId: 'asc' },
+        },
+      },
     });
-
-    const hasMore = buddies.length > limit;
-    const items = buddies.slice(0, limit);
+    const latestDive = new Map<string, Date>();
+    for (const schedule of schedules) {
+      for (const buddyId of [schedule.instructorId, ...schedule.participants.map(p => p.userId!)]) {
+        if (buddyId !== userId && !blockedIds.has(buddyId) && !latestDive.has(buddyId)) {
+          latestDive.set(buddyId, schedule.scheduleDate);
+        }
+      }
+    }
+    if (latestDive.size === 0) return { buddies: [], hasMore: false };
 
     const buddyUsers = await this.prisma.user.findMany({
-      where: { userId: { in: items.map(b => b.buddyId) } },
+      where: {
+        userId: { in: [...latestDive.keys()] },
+        OR: [{ isTemporary: false }, { temporaryOwner: { userId } }],
+      },
       select: {
         isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true,
         profile: { select: { level: true } },
       },
     });
     const userMap = new Map(buddyUsers.map(u => [u.userId, u]));
-
+    const eligible = [...latestDive.keys()].filter(id => userMap.has(id));
+    const pageSize = Math.min(100, Math.max(1, Math.trunc(limit) || 20));
+    const offset = (Math.max(1, Math.trunc(page) || 1) - 1) * pageSize;
+    const items = eligible.slice(offset, offset + pageSize);
     return {
-      buddies: items.map(b => {
-        const u = userMap.get(b.buddyId);
-        const d = b.lastDiveDate;
-        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      buddies: items.map(buddyId => {
+        const u = userMap.get(buddyId)!;
         return {
-          userId: b.buddyId,
-          isTemporary: u?.isTemporary ?? false,
-          nickname: u?.nickname ?? '',
-          name: u?.userName ?? null,
-          profileImage: u?.profileImage ?? null,
-          level: u?.profile?.level ?? '0',
-          lastDiveDate: dateStr,
+          userId: buddyId,
+          isTemporary: u.isTemporary,
+          nickname: u.nickname,
+          name: u.userName ?? null,
+          profileImage: u.profileImage ?? null,
+          level: u.profile?.level ?? '0',
+          lastDiveDate: latestDive.get(buddyId)!.toISOString().slice(0, 10),
         };
       }),
-      hasMore,
+      hasMore: offset + items.length < eligible.length,
     };
   }
 
