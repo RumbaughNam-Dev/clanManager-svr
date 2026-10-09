@@ -1,3 +1,5 @@
+import { NoticesController } from './notices.controller';
+import { NoticesService } from './notices.service';
 import { TemporaryUserLinkController } from './temporary-user-link.controller';
 import { TemporaryUserLinkService } from './temporary-user-link.service';
 import { DemoAuthController } from './demo-auth.controller';
@@ -10,7 +12,7 @@ import { AllblueS3Service } from './allblue-s3.service';
 import { AllbluePushService } from './allblue-push.service';
 
 @Module({
-  controllers: [TemporaryUserLinkController, AllblueController, DemoAuthController],
-  providers: [TemporaryUserLinkService, DemoAuthService, AllblueService, AllbluePrismaService, AllblueS3Service, AllbluePushService],
+  controllers: [NoticesController, TemporaryUserLinkController, AllblueController, DemoAuthController],
+  providers: [NoticesService, TemporaryUserLinkService, DemoAuthService, AllblueService, AllbluePrismaService, AllblueS3Service, AllbluePushService],
 })
 export class AllblueModule {}

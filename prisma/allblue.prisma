@@ -564,3 +564,19 @@ model temporary_user_link_schedule {
   @@id([auditId, scheduleId])
   @@index([scheduleId])
 }
+
+model notice {
+  id         Int      @id @default(autoincrement())
+  title      String   @db.VarChar(200)
+  content    String   @db.Text
+  pinned     Boolean  @default(false)
+  popup      Boolean  @default(false)
+  deleted    Boolean  @default(false)
+  authorId   String   @db.VarChar(191)
+  authorName String   @db.VarChar(191)
+  createdAt  DateTime @default(now()) @db.DateTime(3)
+  updatedAt  DateTime @updatedAt @db.DateTime(3)
+
+  @@index([deleted, pinned, createdAt])
+  @@index([deleted, popup, createdAt])
+}
