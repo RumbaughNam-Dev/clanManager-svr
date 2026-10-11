@@ -38,7 +38,7 @@ it('records the selected qualification as completed when approving', async () =>
   const { service, tx } = fixture();
   expect(await service.approveCertRequest(1, 9)).toEqual({ success: true });
   expect(tx.user_license.create).toHaveBeenCalledWith({ data: {
-    userId: 'diver', licenseId: 9, status: 'COMPLETED', completedAt: expect.any(Date),
+    userId: 'diver', licenseId: 9, status: 'COMPLETED', completedAt: expect.any(Date), certRequestId: 1,
   } });
   expect(tx.user_profile.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { level: '4' } }));
 });
@@ -49,7 +49,7 @@ it('completes an existing course without replacing its completion date', async (
   tx.user_license.findFirst.mockResolvedValue({ id: 10, completedAt } as never);
   await service.approveCertRequest(1, 9);
   expect(tx.user_license.create).not.toHaveBeenCalled();
-  expect(tx.user_license.update).toHaveBeenCalledWith({ where: { id: 10 }, data: { status: 'COMPLETED', completedAt } });
+  expect(tx.user_license.update).toHaveBeenCalledWith({ where: { id: 10 }, data: { status: 'COMPLETED', completedAt, certRequestId: 1 } });
 });
 
 it.each(['5', 'A'])('preserves higher level or admin access (%s)', async (level) => {

@@ -450,7 +450,7 @@ export class AllblueService {
     return { success: true };
   }
 
-  async getProfile(userId: number) {
+  async getProfile(userId: number, includeCertificateImages = true) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -459,7 +459,7 @@ export class AllblueService {
         licenses: {
           where: { status: 'COMPLETED' },
           orderBy: [{ license: { association: { sortOrder: 'asc' } } }, { license: { levelOrder: 'desc' } }],
-          select: { license: { select: { id: true, name: true, nameKo: true } } },
+          select: { license: { select: { id: true, name: true, nameKo: true } }, certRequest: { select: { id: true, userId: true, status: true, imageUrl: true } } },
         },
         organization: { select: { id: true, name: true, logo: true, status: true, representativeId: true } },
       },
@@ -505,7 +505,14 @@ export class AllblueService {
           : null,
       },
       profile,
-      certifications: Array.from(new Map(user.licenses.map(({ license }) => [license.id, license])).values()),
+      certifications: Array.from(user.licenses.reduce((result, { license, certRequest }) => {
+        const imageUrl = includeCertificateImages && certRequest?.userId === user.id && certRequest.status === 'approved'
+          ? certRequest.imageUrl?.trim() : undefined;
+        // Prefer a linked image when duplicate completed course rows exist.
+        const previous = result.get(license.id);
+        if (!previous || imageUrl) result.set(license.id, { ...license, ...(imageUrl ? { imageUrl } : {}) });
+        return result;
+      }, new Map<number, { id: number; name: string; nameKo: string | null; imageUrl?: string }>()).values()),
     };
   }
 
@@ -519,7 +526,7 @@ export class AllblueService {
       return { success: false, message: '사용자를 찾을 수 없습니다.' };
     }
 
-    const result = await this.getProfile(user.id);
+    const result = await this.getProfile(user.id, currentUserId === userId);
 
     const students = await this.getDivingLogStudentIds(currentUserId);
     const isMyStudent = currentUserId !== userId && students.has(userId);
@@ -3220,11 +3227,11 @@ export class AllblueService {
       if (existingLicense) {
         await tx.user_license.update({
           where: { id: existingLicense.id },
-          data: { status: 'COMPLETED', completedAt: existingLicense.completedAt ?? new Date() },
+          data: { status: 'COMPLETED', completedAt: existingLicense.completedAt ?? new Date(), certRequestId: request.id },
         });
       } else {
         await tx.user_license.create({
-          data: { userId: user.userId, licenseId, status: 'COMPLETED', completedAt: new Date() },
+          data: { userId: user.userId, licenseId, status: 'COMPLETED', completedAt: new Date(), certRequestId: request.id },
         });
       }
       // A second association's lower qualification must not remove existing access.

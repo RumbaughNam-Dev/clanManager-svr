@@ -70,6 +70,8 @@ model user_license {
   status            String    @default("IN_PROGRESS") @db.VarChar(20)
   startedAt         DateTime? @map("started_at")
   completedAt       DateTime? @map("completed_at")
+  certRequestId     Int?      @map("cert_request_id")
+  certRequest       cert_request? @relation(fields: [certRequestId], references: [id], onDelete: SetNull)
   certificateNumber String?   @map("certificate_number") @db.VarChar(100)
   instructorId      String?   @map("instructor_id") @db.VarChar(50)
   createdAt         DateTime  @default(now()) @map("created_at")
@@ -79,6 +81,7 @@ model user_license {
   instructor        user?     @relation("ul_instructor", fields: [instructorId], references: [userId])
   scheduleParticipantLicenses schedule_participant_license[]
 
+  @@index([certRequestId], map: "idx_ul_cert_request")
   @@index([userId], map: "idx_ul_user")
   @@index([licenseId], map: "idx_ul_license")
   @@index([instructorId], map: "idx_ul_instructor")
@@ -163,6 +166,7 @@ model form_submission {
 }
 
 model cert_request {
+  userLicenses user_license[]
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
   imageUrl  String   @map("image_url") @db.VarChar(500)
