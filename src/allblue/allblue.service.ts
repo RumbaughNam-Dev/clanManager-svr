@@ -460,7 +460,7 @@ export class AllblueService {
         licenses: {
           where: { status: 'COMPLETED' },
           orderBy: [{ license: { association: { sortOrder: 'asc' } } }, { license: { levelOrder: 'desc' } }],
-          select: { license: { select: { id: true, name: true, nameKo: true, levelOrder: true, isInstructor: true } }, certRequest: { select: { id: true, userId: true, status: true, imageUrl: true } } },
+          select: { license: { select: { id: true, code: true, name: true, nameKo: true, levelOrder: true, isInstructor: true, association: { select: { code: true, name: true, nameKo: true } } } }, certRequest: { select: { id: true, userId: true, status: true, imageUrl: true } } },
         },
         organization: { select: { id: true, name: true, logo: true, status: true, representativeId: true } },
       },
@@ -929,7 +929,8 @@ export class AllblueService {
     const available = await this.prisma.license.findMany({
       where: {
         associationId,
-        levelOrder: { gt: maxLevelOrder },
+        // Different instructor qualifications share level 5.
+        OR: [{ levelOrder: { gt: maxLevelOrder } }, { isInstructor: 1 }],
         id: { notIn: existingLicenseIds },
       },
       orderBy: { levelOrder: 'asc' },

@@ -311,7 +311,7 @@ model license {
   requirements  license_requirement[]
   userLicenses  user_license[]
 
-  @@unique([associationId, levelOrder], map: "uk_license_assoc_level")
+  @@unique([associationId, code], map: "uk_license_assoc_code")
   @@index([associationId], map: "idx_license_assoc")
 }
 
