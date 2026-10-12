@@ -1,8 +1,9 @@
 const ts = require(process.env.TYPESCRIPT_PATH || 'typescript');
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
-const output = {};
+const output = {}, badgeExports = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/allblue/badge-level.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: badgeExports });
 const source = ts.transpileModule(fs.readFileSync('src/allblue/allblue.service.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, experimentalDecorators: true } }).outputText;
-vm.runInNewContext(source, { exports: output, require: name => name === '@nestjs/common' ? { Injectable: () => value => value, BadRequestException: Error, ForbiddenException: Error, ConflictException: Error } : {} });
+vm.runInNewContext(source, { exports: output, require: name => name === './badge-level' ? badgeExports : name === '@nestjs/common' ? { Injectable: () => value => value, BadRequestException: Error, ForbiddenException: Error, ConflictException: Error } : {} });
 const { AllblueService } = output;
 let existing = null, written, claimed = 1;
 const license = { id: 9, name: 'AIDA 4', nameKo: null, levelOrder: 4, isInstructor: 0 };

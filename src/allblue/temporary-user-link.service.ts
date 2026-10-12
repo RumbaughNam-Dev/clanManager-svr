@@ -1,3 +1,4 @@
+import { BADGE_PROFILE_SELECT, badgeLevel } from './badge-level';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
@@ -57,9 +58,9 @@ export class TemporaryUserLinkService {
       isTemporary: false, status: 'approved', id: { not: actorId },
       ...(this.config.get<string>('ALLBLUE_DEMO_USER_ID') ? { userId: { not: this.config.get<string>('ALLBLUE_DEMO_USER_ID') } } : {}),
       OR: [{ nickname: { contains: query.trim() } }, { userName: { contains: query.trim() } }],
-    }, select: { id: true, userId: true, nickname: true, userName: true, profileImage: true, phone: true, profile: { select: { level: true } } }, orderBy: { id: 'asc' }, take: 30 });
+    }, select: { id: true, userId: true, nickname: true, userName: true, profileImage: true, phone: true, profile: { select: BADGE_PROFILE_SELECT } }, orderBy: { id: 'asc' }, take: 30 });
     return { users: users.map(u => ({ id: u.id, userId: u.userId, nickname: u.nickname, name: u.userName,
-      profileImage: u.profileImage, level: u.profile?.level ?? '0', phoneHint: maskLinkPhone(u.phone) })) };
+      profileImage: u.profileImage, level: u.profile?.level ?? '0', badgeLevel: badgeLevel(u.profile), phoneHint: maskLinkPhone(u.phone) })) };
   }
 
   private async collect(db: DB, scheduleId: number, sourceId: number, targetId: number, actorId: number) {

@@ -1,3 +1,4 @@
+import { BADGE_PROFILE_SELECT, badgeLevel } from './badge-level';
 import { lockTemporaryUser } from './temporary-user-lock';
 import { Injectable, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -459,7 +460,7 @@ export class AllblueService {
         licenses: {
           where: { status: 'COMPLETED' },
           orderBy: [{ license: { association: { sortOrder: 'asc' } } }, { license: { levelOrder: 'desc' } }],
-          select: { license: { select: { id: true, name: true, nameKo: true } }, certRequest: { select: { id: true, userId: true, status: true, imageUrl: true } } },
+          select: { license: { select: { id: true, name: true, nameKo: true, levelOrder: true, isInstructor: true } }, certRequest: { select: { id: true, userId: true, status: true, imageUrl: true } } },
         },
         organization: { select: { id: true, name: true, logo: true, status: true, representativeId: true } },
       },
@@ -482,7 +483,7 @@ export class AllblueService {
           cwtb: user.profile.cwtb ? Number(user.profile.cwtb) : null,
           cwt: user.profile.cwt ? Number(user.profile.cwt) : null,
           cnf: user.profile.cnf ? Number(user.profile.cnf) : null,
-          level: user.profile.level,
+          level: user.profile.level, badgeLevel: badgeLevel(user.profile, user.licenses),
         }
       : null;
 
@@ -597,6 +598,7 @@ export class AllblueService {
       where: { userId },
       create: { userId, ...data },
       update: data,
+      include: { user: BADGE_PROFILE_SELECT.user },
     });
 
     return {
@@ -613,7 +615,7 @@ export class AllblueService {
         cwtb: profile.cwtb ? Number(profile.cwtb) : null,
         cwt: profile.cwt ? Number(profile.cwt) : null,
         cnf: profile.cnf ? Number(profile.cnf) : null,
-        level: profile.level,
+        level: profile.level, badgeLevel: badgeLevel(profile),
       },
     };
   }
@@ -723,7 +725,7 @@ export class AllblueService {
     const currentUser = await this.prisma.user.findUnique({ where: { id: currentUserId }, select: { userId: true } });
     const users = await this.prisma.user.findMany({
       where: { temporaryLinkedAt: null, AND: [{ OR: [{ nickname: { contains: q.trim() } }, { userName: { contains: q.trim() } }] }, { OR: [{ isTemporary: false }, { temporaryOwnerId: currentUserId }] }] },
-      select: { isTemporary: true, id: true, userId: true, nickname: true, userName: true, profileImage: true, phone: true, birthDate: true, profile: { select: { level: true } } },
+      select: { isTemporary: true, id: true, userId: true, nickname: true, userName: true, profileImage: true, phone: true, birthDate: true, profile: { select: BADGE_PROFILE_SELECT } },
     });
 
     // 현재 강사의 교육생(참가자로 등록된 적 있는 유저)을 최상단
@@ -745,7 +747,7 @@ export class AllblueService {
     });
 
     return {
-      users: sorted.map(u => ({ isTemporary: u.isTemporary, id: u.id, userId: u.userId, nickname: u.nickname, profileImage: u.profileImage ?? null, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? '0' })),
+      users: sorted.map(u => ({ isTemporary: u.isTemporary, id: u.id, userId: u.userId, nickname: u.nickname, profileImage: u.profileImage ?? null, name: u.userName ?? null, phone: u.phone, birthDate: u.birthDate ?? null, level: u.profile?.level ?? '0', badgeLevel: badgeLevel(u.profile) })),
     };
   }
 
@@ -1198,7 +1200,7 @@ export class AllblueService {
       include: {
         pool: { select: { name: true } },
         instructor: { select: { nickname: true, userName: true } },
-        participants: { include: { user: { select: { isTemporary: true, nickname: true, userName: true, profile: { select: { level: true } } } } } },
+        participants: { include: { user: { select: { isTemporary: true, nickname: true, userName: true, profile: { select: BADGE_PROFILE_SELECT } } } } },
       },
     });
 
@@ -1230,7 +1232,7 @@ export class AllblueService {
           isTemporary: p.user?.isTemporary ?? false,
           nickname: p.user?.nickname ?? '',
           name: p.user?.userName ?? null,
-          level: p.user?.profile?.level ?? null,
+          level: p.user?.profile?.level ?? null, badgeLevel: badgeLevel(p.user?.profile),
         })),
       })),
     };
@@ -1348,10 +1350,10 @@ export class AllblueService {
       orderBy: [{ scheduleDate: 'asc' }, { startHour: 'asc' }, { startMinute: 'asc' }],
       include: {
         pool: { select: { name: true } },
-        instructor: { select: { nickname: true, userName: true, profile: { select: { level: true } } } },
+        instructor: { select: { nickname: true, userName: true, profile: { select: BADGE_PROFILE_SELECT } } },
         participants: {
           include: {
-            user: { select: { isTemporary: true, nickname: true, userName: true, profile: { select: { level: true } } } },
+            user: { select: { isTemporary: true, nickname: true, userName: true, profile: { select: BADGE_PROFILE_SELECT } } },
             licenses: { select: { userLicense: { select: { license: { select: { levelOrder: true, isInstructor: true } } } } } },
           },
         },
@@ -1412,7 +1414,7 @@ export class AllblueService {
             isTemporary: p.user?.isTemporary ?? false,
           nickname: p.user?.nickname ?? '',
             name: p.user?.userName ?? null,
-            level: p.user?.profile?.level ?? null,
+            level: p.user?.profile?.level ?? null, badgeLevel: badgeLevel(p.user?.profile),
           })),
           minLevel,
           minCourseLevel,
@@ -1437,7 +1439,7 @@ export class AllblueService {
               select: {
                 temporaryLinkedAt: true, temporaryOwner: { select: { userId: true } },
                 isTemporary: true, id: true, nickname: true, userName: true, profileImage: true,
-                profile: { select: { level: true } },
+                profile: { select: BADGE_PROFILE_SELECT },
                 licenses: { where: { status: 'IN_PROGRESS' }, select: { id: true }, take: 1 },
               },
             },
@@ -1525,7 +1527,7 @@ export class AllblueService {
               profileImage: p.user!.profileImage ?? null,
               name: p.user!.userName ?? null,
               isGuest: false, categoryCode: p.categoryCode ?? null,
-              level: p.user!.profile?.level ?? '0',
+              level: p.user!.profile?.level ?? '0', badgeLevel: badgeLevel(p.user!.profile),
               participantLicenses: [], hasInProgressLicense: false, debriefingDone: false,
               waiverSigned: false, medicalSigned: false,
               waiverUrl: null, medicalUrl: null, waiverUuid: null, medicalUuid: null,
@@ -1615,7 +1617,7 @@ export class AllblueService {
             medicalUuid: p.invitationStatus === 'pending' || p.invitationStatus === 'rejected' ? null : medical?.uuid ?? null,
             waiverReused,
             medicalReused,
-            level: p.user!.profile?.level ?? '0',
+            level: p.user!.profile?.level ?? '0', badgeLevel: badgeLevel(p.user!.profile),
             hasInProgressLicense: p.user!.licenses?.length > 0,
             debriefingDone: debriefedIds.has(p.user!.id),
           };
@@ -2041,7 +2043,7 @@ export class AllblueService {
       where: { userId },
       select: {
         isTemporary: true, userId: true, nickname: true, userName: true,
-        profile: { select: { level: true } },
+        profile: { select: BADGE_PROFILE_SELECT },
         licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
       },
     });
@@ -2051,7 +2053,7 @@ export class AllblueService {
       isTemporary: user.isTemporary,
       nickname: user.nickname,
       name: user.userName ?? null,
-      level: user.profile?.level ?? '0',
+      level: user.profile?.level ?? '0', badgeLevel: badgeLevel(user.profile),
       licenseName: user.licenses[0]?.license?.nameKo ?? user.licenses[0]?.license?.name ?? null,
     };
   }
@@ -2112,7 +2114,7 @@ export class AllblueService {
       },
       select: {
         isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true,
-        profile: { select: { level: true } },
+        profile: { select: BADGE_PROFILE_SELECT },
       },
     });
     const userMap = new Map(buddyUsers.map(u => [u.userId, u]));
@@ -2129,7 +2131,7 @@ export class AllblueService {
           nickname: u.nickname,
           name: u.userName ?? null,
           profileImage: u.profileImage ?? null,
-          level: u.profile?.level ?? '0',
+          level: u.profile?.level ?? '0', badgeLevel: badgeLevel(u.profile),
           lastDiveDate: latestDive.get(buddyId)!.toISOString().slice(0, 10),
         };
       }),
@@ -2165,7 +2167,7 @@ export class AllblueService {
       where: { userId: { in: studentUserIds } },
       select: {
         isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true,
-        profile: { select: { level: true } },
+        profile: { select: BADGE_PROFILE_SELECT },
         licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
       },
     });
@@ -2177,7 +2179,7 @@ export class AllblueService {
         nickname: u.nickname,
         name: u.userName ?? null,
         profileImage: u.profileImage ?? null,
-        level: u.profile?.level ?? '0',
+        level: u.profile?.level ?? '0', badgeLevel: badgeLevel(u.profile),
         memo: memoMap.get(u.userId) ?? '',
         licenseName: u.licenses[0]?.license?.nameKo ?? u.licenses[0]?.license?.name ?? null,
       })),
@@ -2209,7 +2211,7 @@ export class AllblueService {
       where: { userId: { in: instructorIds } },
       select: {
         isTemporary: true, userId: true, nickname: true, userName: true,
-        profile: { select: { level: true } },
+        profile: { select: BADGE_PROFILE_SELECT },
         licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
       },
     });
@@ -2220,7 +2222,7 @@ export class AllblueService {
         isTemporary: u.isTemporary,
         nickname: u.nickname,
         name: u.userName ?? null,
-        level: u.profile?.level ?? '0',
+        level: u.profile?.level ?? '0', badgeLevel: badgeLevel(u.profile),
         memo: memoMap.get(u.userId) ?? '',
         licenseName: u.licenses[0]?.license?.nameKo ?? u.licenses[0]?.license?.name ?? null,
       })),
@@ -2235,7 +2237,7 @@ export class AllblueService {
         friend: {
           select: {
             isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true,
-            profile: { select: { level: true } },
+            profile: { select: BADGE_PROFILE_SELECT },
             licenses: { where: { status: 'IN_PROGRESS' }, select: { license: { select: { nameKo: true, name: true } } }, take: 1 },
           },
         },
@@ -2249,7 +2251,7 @@ export class AllblueService {
         nickname: f.friend!.nickname,
         name: f.friend!.userName ?? null,
         profileImage: f.friend!.profileImage ?? null,
-        level: f.friend!.profile?.level ?? '0',
+        level: f.friend!.profile?.level ?? '0', badgeLevel: badgeLevel(f.friend!.profile),
         memo: f.memo,
         pinned: f.pinned === 1,
         licenseName: f.friend!.licenses[0]?.license?.nameKo ?? f.friend!.licenses[0]?.license?.name ?? null,
@@ -2331,7 +2333,7 @@ export class AllblueService {
       where: { userId: { in: blocked.map(b => b.blockedId) } },
       select: {
         isTemporary: true, userId: true, nickname: true, userName: true,
-        profile: { select: { level: true } },
+        profile: { select: BADGE_PROFILE_SELECT },
       },
     });
     const userMap = new Map(users.map(u => [u.userId, u]));
@@ -2344,7 +2346,7 @@ export class AllblueService {
           isTemporary: u?.isTemporary ?? false,
           nickname: u?.nickname ?? '',
           name: u?.userName ?? null,
-          level: u?.profile?.level ?? '0',
+          level: u?.profile?.level ?? '0', badgeLevel: badgeLevel(u?.profile),
         };
       }),
     };
@@ -2392,20 +2394,29 @@ export class AllblueService {
   }
 
   async createDebriefing(body: { scheduleId: number; participantId: number; content: string }, createdBy: number) {
-    return this.prisma.$transaction(async tx => {
+    const { notification, ...result } = await this.prisma.$transaction(async tx => {
       await lockTemporaryUser(tx, { id: body.participantId });
       return this.createDebriefingInTransaction(body, createdBy, tx);
     });
+    // Commit the debriefing before notifying; delivery failures must not undo the save.
+    if (notification) {
+      try {
+        await this.push.sendPushNotifications(notification);
+      } catch (error) {
+        console.error('[Push] Debriefing delivery failed', error);
+      }
+    }
+    return result;
   }
 
   private async createDebriefingInTransaction(body: { scheduleId: number; participantId: number; content: string }, createdBy: number, tx: any) {
     const { scheduleId, participantId, content } = body;
 
     if (!scheduleId || !participantId) {
-      return { success: false, message: '필수 항목을 입력해주세요.' };
+      return { success: false, message: '필수 항목을 입력해주세요.', notification: null };
     }
 
-    const author = await tx.user.findUnique({ where: { id: createdBy }, select: { userId: true, profile: { select: { level: true } } } });
+    const author = await tx.user.findUnique({ where: { id: createdBy }, select: { userId: true, nickname: true, profile: { select: { level: true } } } });
     if (author) await this.assertTemporaryUserAccess({ id: participantId }, author.userId);
     const participant = await tx.schedule_participant.findFirst({
       where: { scheduleId, invitationStatus: 'accepted', user: { id: participantId } }, include: { schedule: true },
@@ -2424,7 +2435,18 @@ export class AllblueService {
       },
     });
 
-    return { success: true };
+    const recipient = await tx.user.findUnique({
+      where: { id: participantId }, select: { userId: true, isTemporary: true },
+    });
+    return {
+      success: true,
+      notification: recipient && !recipient.isTemporary ? {
+        userIds: [recipient.userId],
+        title: '디브리핑 등록',
+        body: `${author.nickname || author.userId} 강사님이 디브리핑을 작성했어요. 눌러서 확인해주세요.`,
+        data: { type: 'schedule', scheduleId },
+      } : null,
+    };
   }
 
   async getFriendGroups(userId: string) {
@@ -2473,7 +2495,7 @@ export class AllblueService {
       where: { groupId },
       include: {
         user: {
-          select: { isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true, profile: { select: { level: true } } },
+          select: { isTemporary: true, userId: true, nickname: true, userName: true, profileImage: true, profile: { select: BADGE_PROFILE_SELECT } },
         },
       },
     });
@@ -2485,7 +2507,7 @@ export class AllblueService {
         nickname: m.user.nickname,
         name: m.user.userName ?? null,
         profileImage: m.user.profileImage ?? null,
-        level: m.user.profile?.level ?? null,
+        level: m.user.profile?.level ?? null, badgeLevel: badgeLevel(m.user.profile),
       })),
     };
   }
