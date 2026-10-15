@@ -255,6 +255,7 @@ model user_license_achievement {
   userId        Int       @map("user_id")
   requirementId Int       @map("requirement_id") @db.UnsignedInt
   isCompleted   Int       @default(0) @map("is_completed") @db.TinyInt
+  measuredValue Decimal?  @map("measured_value") @db.Decimal(7, 2)
   completedAt   DateTime? @map("completed_at")
   completedBy   Int?      @map("completed_by")
   createdAt     DateTime  @default(now()) @map("created_at")

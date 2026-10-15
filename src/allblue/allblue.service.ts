@@ -1863,7 +1863,7 @@ export class AllblueService {
     // user_license_achievement (userId: INT)로 완료된 항목 조회
     const achievements = await this.prisma.user_license_achievement.findMany({
       where: { userId: userIntId },
-      select: { requirementId: true, isCompleted: true, completedAt: true, completedBy: true },
+      select: { requirementId: true, isCompleted: true, measuredValue: true, completedAt: true, completedBy: true },
     });
     const achievementMap = new Map(achievements.map(a => [a.requirementId, a]));
 
@@ -1898,6 +1898,7 @@ export class AllblueService {
             isOptional: r.isOptional,
             sortOrder: r.sortOrder,
             note: r.note,
+            measuredValue: achievement?.measuredValue == null ? null : Number(achievement.measuredValue),
             isCompleted: achievement?.isCompleted === 1,
             completedAt: achievement?.completedAt?.toISOString() ?? null,
             completedBy: achievement?.completedBy ?? null,
@@ -1910,6 +1911,41 @@ export class AllblueService {
         totalCount: ul.license.requirements.length,
       })),
     };
+  }
+
+  async saveAchievementValue(body: { requirementId: number; userId: number; value: number | null }, currentUserId: number) {
+    const { requirementId, userId, value } = body;
+    if (!Number.isInteger(requirementId) || requirementId <= 0 || !Number.isInteger(userId) || userId <= 0 ||
+        (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 99999.99 ||
+          Math.abs(value * 100 - Math.round(value * 100)) > 0.000001))) {
+      throw new BadRequestException('기록은 0 이상의 숫자(소수점 둘째 자리까지) 또는 null이어야 합니다.');
+    }
+    return this.prisma.$transaction(async tx => {
+      await lockTemporaryUser(tx, { id: userId });
+      await this.assertDivingLogAccess(currentUserId, userId, false);
+      const instructor = await tx.user.findUnique({ where: { id: currentUserId }, select: { profile: { select: { level: true } } } });
+      if (!['5', 'A'].includes(instructor?.profile?.level?.toUpperCase() ?? '')) {
+        throw new ForbiddenException('강사만 수치를 기록할 수 있습니다.');
+      }
+      const requirement = await tx.license_requirement.findUnique({ where: { id: requirementId } });
+      if (!requirement || requirement.reqType !== 'MEASURE') {
+        throw new BadRequestException('수치 입력이 가능한 달성과제가 아닙니다.');
+      }
+      if (requirement.unit === 'SEC' && value !== null && (!Number.isInteger(value) || value > 5999)) {
+        throw new BadRequestException('STA는 0분 0초부터 99분 59초까지 입력해주세요.');
+      }
+      const course = await tx.user_license.findFirst({
+        where: { licenseId: requirement.licenseId, user: { id: userId } }, select: { id: true },
+      });
+      if (!course) throw new BadRequestException('교육생에게 등록된 자격증 과정이 아닙니다.');
+      // Value-only writes never change completion or its instructor attribution.
+      await tx.user_license_achievement.upsert({
+        where: { userId_requirementId: { userId, requirementId } },
+        create: { userId, requirementId, measuredValue: value },
+        update: { measuredValue: value },
+      });
+      return { success: true };
+    });
   }
 
   async toggleAchievement(body: { requirementId: number; userId: number; completed: boolean }, currentUserId: number) {

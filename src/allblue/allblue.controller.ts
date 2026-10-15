@@ -233,6 +233,12 @@ export class AllblueController {
   }
 
   @UseGuards(AllblueJwtAuthGuard)
+  @Post('achievement/value')
+  saveAchievementValue(@Body() body: { requirementId: number; userId: number; value: number | null }, @Req() req: any) {
+    return this.allblueService.saveAchievementValue(body, Number(req.user.sub));
+  }
+
+  @UseGuards(AllblueJwtAuthGuard)
   @Post('achievement/toggle')
   toggleAchievement(@Body() body: { requirementId: number; userId: number; completed: boolean }, @Req() req: any) {
     return this.allblueService.toggleAchievement(body, Number(req.user.sub));

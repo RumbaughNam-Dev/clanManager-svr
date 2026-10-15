@@ -217,7 +217,10 @@ export function buildLinkPlan(data: LinkData) {
     if (!existing) update('user_license_achievement', a, { userId: target.id });
     else {
       duplicates.achievements++;
-      if (existing.isCompleted !== 1 && a.isCompleted === 1) update('user_license_achievement', existing, { isCompleted: 1, completedAt: a.completedAt, completedBy: a.completedBy });
+      const changes: Record<string, unknown> = {};
+      if (existing.measuredValue == null && a.measuredValue != null) changes.measuredValue = a.measuredValue;
+      if (existing.isCompleted !== 1 && a.isCompleted === 1) Object.assign(changes, { isCompleted: 1, completedAt: a.completedAt, completedBy: a.completedBy });
+      if (Object.keys(changes).length) update('user_license_achievement', existing, changes);
       remove('user_license_achievement', a);
     }
   }
